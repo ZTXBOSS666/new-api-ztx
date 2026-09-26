@@ -23,6 +23,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Gift,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -36,11 +37,11 @@ import {
   User,
   Users,
   Wallet,
-} from 'lucide-react'
-import { useTranslation } from 'react-i18next'
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
 
-import type { SidebarData } from '@/components/layout/types'
-import { ROLE } from '@/lib/roles'
+import type { SidebarData } from "@/components/layout/types";
+import { ROLE } from "@/lib/roles";
 
 /**
  * Root navigation groups for the application sidebar.
@@ -49,134 +50,139 @@ import { ROLE } from '@/lib/roles'
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
 export function useSidebarData(): SidebarData {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
 
   return {
     navGroups: [
       {
-        id: 'chat',
-        title: t('Chat'),
+        id: "chat",
+        title: t("Chat"),
         items: [
           {
-            title: t('Playground'),
-            url: '/playground',
+            title: t("Playground"),
+            url: "/playground",
             icon: FlaskConical,
           },
           {
-            title: t('Chat'),
+            title: t("Chat"),
             icon: MessageSquare,
-            type: 'chat-presets',
+            type: "chat-presets",
           },
         ],
       },
       {
-        id: 'general',
-        title: t('General'),
+        id: "general",
+        title: t("General"),
         items: [
           {
-            title: t('Overview'),
-            url: '/dashboard/overview',
+            title: t("Overview"),
+            url: "/dashboard/overview",
             icon: Activity,
           },
           {
-            title: t('Dashboard'),
-            url: '/dashboard/models',
+            title: t("Dashboard"),
+            url: "/dashboard/models",
             icon: LayoutDashboard,
           },
           {
-            title: t('API Keys'),
-            url: '/keys',
+            title: t("API Keys"),
+            url: "/keys",
             icon: Key,
           },
           {
-            title: t('Usage Logs'),
-            url: '/usage-logs/common',
+            title: t("Usage Logs"),
+            url: "/usage-logs/common",
             icon: FileText,
           },
           {
-            title: t('Audit Logs'),
-            url: '/usage-logs/audit',
+            title: t("Audit Logs"),
+            url: "/usage-logs/audit",
             icon: ClipboardList,
           },
           {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+            title: t("Task Logs"),
+            url: "/usage-logs/task",
+            activeUrls: ["/usage-logs/drawing"],
+            configUrls: ["/usage-logs/drawing", "/usage-logs/task"],
             icon: ListTodo,
+          },
+          {
+            title: t("Daily lottery"),
+            url: "/lottery",
+            icon: Gift,
           },
         ],
       },
       {
-        id: 'personal',
-        title: t('Personal'),
+        id: "personal",
+        title: t("Personal"),
         items: [
           {
-            title: t('Wallet'),
-            url: '/wallet',
+            title: t("Wallet"),
+            url: "/wallet",
             icon: Wallet,
           },
           {
-            title: t('Profile'),
-            url: '/profile',
+            title: t("Profile"),
+            url: "/profile",
             icon: User,
           },
           {
-            title: t('Security & Access'),
-            url: '/security',
+            title: t("Security & Access"),
+            url: "/security",
             icon: ShieldCheck,
           },
         ],
       },
       {
-        id: 'admin',
-        title: t('Admin'),
+        id: "admin",
+        title: t("Admin"),
         items: [
           {
-            title: t('Channels'),
-            url: '/channels',
+            title: t("Channels"),
+            url: "/channels",
             icon: Radio,
           },
           {
-            title: t('Models'),
-            url: '/models/metadata',
+            title: t("Models"),
+            url: "/models/metadata",
             icon: Box,
           },
           {
-            title: t('Users'),
-            url: '/users',
+            title: t("Users"),
+            url: "/users",
             icon: Users,
           },
           {
-            title: t('Redemption Codes'),
-            url: '/redemption-codes',
+            title: t("Redemption Codes"),
+            url: "/redemption-codes",
             icon: Ticket,
           },
           {
-            title: t('Subscriptions'),
-            url: '/subscriptions',
+            title: t("Subscriptions"),
+            url: "/subscriptions",
             icon: CreditCard,
           },
           {
-            title: t('System Info'),
-            url: '/system-info',
+            title: t("System Info"),
+            url: "/system-info",
             icon: ServerCog,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
-            title: t('Task Plugins'),
-            url: '/task-plugins',
+            title: t("Task Plugins"),
+            url: "/task-plugins",
             icon: PlugZap,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
-            title: t('System Settings'),
-            url: '/system-settings/site',
-            activeUrls: ['/system-settings'],
+            title: t("System Settings"),
+            url: "/system-settings/site",
+            activeUrls: ["/system-settings"],
             icon: Settings,
           },
         ],
       },
     ],
-  }
+  };
 }

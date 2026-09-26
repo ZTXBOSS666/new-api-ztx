@@ -135,6 +135,8 @@ func SetApiRouter(router *gin.Engine) {
 				// Check-in routes
 				selfRoute.GET("/checkin", controller.GetCheckinStatus)
 				selfRoute.POST("/checkin", middleware.TurnstileCheck(), controller.DoCheckin)
+				selfRoute.GET("/lottery", controller.GetLotteryStatus)
+				selfRoute.POST("/lottery/join", middleware.CriticalRateLimit(), controller.JoinLottery)
 
 				// Custom OAuth bindings
 				selfRoute.GET("/oauth/bindings", controller.GetUserOAuthBindings)
@@ -162,6 +164,13 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		lotteryAdminRoute := apiRouter.Group("/lottery/admin")
+		lotteryAdminRoute.Use(middleware.AdminAuth(), middleware.DisableCache())
+		{
+			lotteryAdminRoute.GET("", middleware.RequirePermission(authz.LotteryRead), controller.GetLotteryAdmin)
+			lotteryAdminRoute.PUT("", middleware.RequirePermission(authz.LotteryManage), controller.UpdateLotteryAdmin)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

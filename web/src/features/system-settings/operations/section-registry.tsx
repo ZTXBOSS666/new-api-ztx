@@ -16,20 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SystemBehaviorSection } from '../general/system-behavior-section'
-import { EmailSettingsSection } from '../integrations/email-settings-section'
-import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
-import { WorkerSettingsSection } from '../integrations/worker-settings-section'
-import { LogSettingsSection } from '../maintenance/log-settings-section'
-import { PerformanceSection } from '../maintenance/performance-section'
-import { UpdateCheckerSection } from '../maintenance/update-checker-section'
-import type { OperationsSettings } from '../types'
-import { createSectionRegistry } from '../utils/section-registry'
+import { LotteryAdminPanel } from "@/features/lottery/LotteryAdminPanel";
+import { SystemBehaviorSection } from "../general/system-behavior-section";
+import { EmailSettingsSection } from "../integrations/email-settings-section";
+import { MonitoringSettingsSection } from "../integrations/monitoring-settings-section";
+import { WorkerSettingsSection } from "../integrations/worker-settings-section";
+import { LogSettingsSection } from "../maintenance/log-settings-section";
+import { PerformanceSection } from "../maintenance/performance-section";
+import type { OperationsSettings } from "../types";
+import { createSectionRegistry } from "../utils/section-registry";
 
 const OPERATIONS_SECTIONS = [
   {
-    id: 'behavior',
-    titleKey: 'System Behavior',
+    id: "lottery",
+    titleKey: "Daily lottery",
+    build: () => <LotteryAdminPanel />,
+  },
+  {
+    id: "behavior",
+    titleKey: "System Behavior",
     build: (settings: OperationsSettings) => (
       <SystemBehaviorSection
         defaultValues={{
@@ -41,27 +46,27 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: 'alerts',
-    titleKey: 'Monitoring & Alerts',
+    id: "alerts",
+    titleKey: "Monitoring & Alerts",
     build: (settings: OperationsSettings) => (
       <MonitoringSettingsSection
         defaultValues={{
           QuotaRemindThreshold: settings.QuotaRemindThreshold,
-          'perf_metrics_setting.enabled':
-            settings['perf_metrics_setting.enabled'] ?? true,
-          'perf_metrics_setting.flush_interval':
-            settings['perf_metrics_setting.flush_interval'] ?? 5,
-          'perf_metrics_setting.bucket_time':
-            settings['perf_metrics_setting.bucket_time'] ?? 'hour',
-          'perf_metrics_setting.retention_days':
-            settings['perf_metrics_setting.retention_days'] ?? 0,
+          "perf_metrics_setting.enabled":
+            settings["perf_metrics_setting.enabled"] ?? true,
+          "perf_metrics_setting.flush_interval":
+            settings["perf_metrics_setting.flush_interval"] ?? 5,
+          "perf_metrics_setting.bucket_time":
+            settings["perf_metrics_setting.bucket_time"] ?? "hour",
+          "perf_metrics_setting.retention_days":
+            settings["perf_metrics_setting.retention_days"] ?? 0,
         }}
       />
     ),
   },
   {
-    id: 'email',
-    titleKey: 'SMTP Email',
+    id: "email",
+    titleKey: "SMTP Email",
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
@@ -79,8 +84,8 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: 'worker',
-    titleKey: 'Worker Proxy',
+    id: "worker",
+    titleKey: "Worker Proxy",
     build: (settings: OperationsSettings) => (
       <WorkerSettingsSection
         defaultValues={{
@@ -93,8 +98,8 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: 'logs',
-    titleKey: 'Log Maintenance',
+    id: "logs",
+    titleKey: "Log Maintenance",
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
@@ -102,48 +107,34 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: 'performance',
-    titleKey: 'Performance',
+    id: "performance",
+    titleKey: "Performance",
     build: (settings: OperationsSettings) => (
       <PerformanceSection
         defaultValues={{
-          'performance_setting.disk_cache_enabled':
-            settings['performance_setting.disk_cache_enabled'] ?? false,
-          'performance_setting.disk_cache_threshold_mb':
-            settings['performance_setting.disk_cache_threshold_mb'] ?? 10,
-          'performance_setting.disk_cache_max_size_mb':
-            settings['performance_setting.disk_cache_max_size_mb'] ?? 1024,
-          'performance_setting.disk_cache_path':
-            settings['performance_setting.disk_cache_path'] ?? '',
-          'performance_setting.monitor_enabled':
-            settings['performance_setting.monitor_enabled'] ?? false,
-          'performance_setting.monitor_cpu_threshold':
-            settings['performance_setting.monitor_cpu_threshold'] ?? 90,
-          'performance_setting.monitor_memory_threshold':
-            settings['performance_setting.monitor_memory_threshold'] ?? 90,
-          'performance_setting.monitor_disk_threshold':
-            settings['performance_setting.monitor_disk_threshold'] ?? 95,
+          "performance_setting.disk_cache_enabled":
+            settings["performance_setting.disk_cache_enabled"] ?? false,
+          "performance_setting.disk_cache_threshold_mb":
+            settings["performance_setting.disk_cache_threshold_mb"] ?? 10,
+          "performance_setting.disk_cache_max_size_mb":
+            settings["performance_setting.disk_cache_max_size_mb"] ?? 1024,
+          "performance_setting.disk_cache_path":
+            settings["performance_setting.disk_cache_path"] ?? "",
+          "performance_setting.monitor_enabled":
+            settings["performance_setting.monitor_enabled"] ?? false,
+          "performance_setting.monitor_cpu_threshold":
+            settings["performance_setting.monitor_cpu_threshold"] ?? 90,
+          "performance_setting.monitor_memory_threshold":
+            settings["performance_setting.monitor_memory_threshold"] ?? 90,
+          "performance_setting.monitor_disk_threshold":
+            settings["performance_setting.monitor_disk_threshold"] ?? 95,
         }}
       />
     ),
   },
-  {
-    id: 'update-checker',
-    titleKey: 'System maintenance',
-    build: (
-      _settings: OperationsSettings,
-      currentVersion?: string | null,
-      startTime?: number | null
-    ) => (
-      <UpdateCheckerSection
-        currentVersion={currentVersion}
-        startTime={startTime}
-      />
-    ),
-  },
-] as const
+] as const;
 
-export type OperationsSectionId = (typeof OPERATIONS_SECTIONS)[number]['id']
+export type OperationsSectionId = (typeof OPERATIONS_SECTIONS)[number]["id"];
 
 const operationsRegistry = createSectionRegistry<
   OperationsSectionId,
@@ -151,14 +142,14 @@ const operationsRegistry = createSectionRegistry<
   [string | null | undefined, number | null | undefined]
 >({
   sections: OPERATIONS_SECTIONS,
-  defaultSection: 'behavior',
-  basePath: '/system-settings/operations',
-  urlStyle: 'path',
-})
+  defaultSection: "behavior",
+  basePath: "/system-settings/operations",
+  urlStyle: "path",
+});
 
-export const OPERATIONS_SECTION_IDS = operationsRegistry.sectionIds
-export const OPERATIONS_DEFAULT_SECTION = operationsRegistry.defaultSection
+export const OPERATIONS_SECTION_IDS = operationsRegistry.sectionIds;
+export const OPERATIONS_DEFAULT_SECTION = operationsRegistry.defaultSection;
 export const getOperationsSectionNavItems =
-  operationsRegistry.getSectionNavItems
-export const getOperationsSectionContent = operationsRegistry.getSectionContent
-export const getOperationsSectionMeta = operationsRegistry.getSectionMeta
+  operationsRegistry.getSectionNavItems;
+export const getOperationsSectionContent = operationsRegistry.getSectionContent;
+export const getOperationsSectionMeta = operationsRegistry.getSectionMeta;

@@ -22,6 +22,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(lotterySettlementHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -160,4 +161,25 @@ func finishSystemTaskHandler(task *model.SystemTask, runnerID string, status mod
 	if err := model.FinishSystemTask(task.TaskID, runnerID, status, result, errorMessage); err != nil {
 		common.SysLog(fmt.Sprintf("system task %s failed to persist result: %v", task.TaskID, err))
 	}
+}
+
+type lotterySettlementHandler struct{}
+
+func (lotterySettlementHandler) Type() string { return model.SystemTaskTypeLotterySettlement }
+func (lotterySettlementHandler) Enabled() bool {
+	var count int64
+	if err := model.DB.Model(&model.LotteryRound{}).Where("status = ? AND draw_date < ?", model.LotteryPending, model.LotteryDrawDate(time.Now())).Count(&count).Error; err != nil {
+		common.SysError("lottery scheduler: " + err.Error())
+		return false
+	}
+	return count > 0
+}
+func (lotterySettlementHandler) Interval() time.Duration { return time.Minute }
+func (lotterySettlementHandler) NewPayload() any         { return nil }
+func (lotterySettlementHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	if err := model.SettleDueLotteryRounds(time.Now()); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]any{"settled": true}, nil)
 }

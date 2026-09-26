@@ -359,6 +359,10 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
+		&LotteryConfig{},
+		&LotteryRound{},
+		&LotteryEntry{},
+		&LotteryWinner{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
@@ -372,6 +376,9 @@ func migrateDB() error {
 		&AuthzRole{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := InitializeLotteryConfig(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {

@@ -57,6 +57,23 @@
 
 ---
 
+> [!NOTE]
+> **Customized fork** — this repository is a fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with two extra changes: a built-in **Daily Lottery** module, and the removal of the front-end update checker.
+
+### 🎁 Fork additions
+
+**Daily lottery** (sidebar → Daily lottery)
+
+- Admins configure the daily participant limit, the daily winner limit, the per-winner reward and the per-entry fee — all in native quota points.
+- The entry fee is deducted from the participant's balance inside the same database transaction that creates the entry, so a failed entry never charges anything; `0` means free entry.
+- The previous day is drawn automatically at 00:00 Beijing time (UTC+8) with a cryptographically secure shuffle; rewards are credited in the same transaction.
+- One entry per user per Beijing day; a user who has ever won can never enter again; participant names are masked by the server and shown in full only inside the authorized admin view.
+- Users and administrators get standalone pages — `/lottery` and `/lottery-admin` — which are no longer mixed into the dashboard section tabs.
+
+**Update checker removed**
+
+The front-end no longer calls the GitHub releases API. The header only shows the build version injected at compile time from the `VERSION` file via `-X github.com/QuantumNous/new-api/common.Version`.
+
 ## 📝 Project Description
 
 New API is a self-hosted AI gateway for applications, agents, and teams. Connect upstream model services, expose a consistent API to your clients, and manage routing, access, usage, and costs in one place.

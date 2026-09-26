@@ -55,6 +55,23 @@
 
 ---
 
+> [!NOTE]
+> **Fork personnalisé** — ce dépôt est un fork de [QuantumNous/new-api](https://github.com/QuantumNous/new-api) qui ajoute un module de **loterie quotidienne** et supprime la vérification des mises à jour côté front-end.
+
+### 🎁 Ajouts du fork
+
+**Loterie quotidienne** (barre latérale → Loterie quotidienne)
+
+- L'administrateur configure la limite de participants par jour, le nombre de gagnants, la récompense par gagnant et les frais de participation (en points de quota natifs).
+- Les frais de participation sont débités du solde dans la même transaction que la création de l'inscription : une inscription échouée n'entraîne aucun débit. `0` signifie gratuit.
+- La veille est tirée automatiquement à 00:00 heure de Pékin (UTC+8) avec un mélange cryptographiquement sûr ; les récompenses sont créditées dans la même transaction.
+- Une seule inscription par utilisateur et par jour (heure de Pékin) ; un gagnant ne peut plus jamais participer ; les noms des participants sont masqués par le serveur et n'apparaissent en clair que dans l'espace administrateur autorisé.
+- Des pages dédiées : `/lottery` pour les utilisateurs et `/lottery-admin` pour les administrateurs, séparées des onglets du tableau de bord.
+
+**Vérification des mises à jour supprimée**
+
+Le front-end n'appelle plus l'API GitHub releases. L'en-tête affiche uniquement la version injectée à la compilation depuis le fichier `VERSION` (`-X github.com/QuantumNous/new-api/common.Version`).
+
 ## 📝 Description du projet
 
 New API est une passerelle IA auto-hébergée pour les applications, les agents et les équipes. Connectez vos fournisseurs de modèles, exposez une API commune à vos clients et gérez le routage, les accès, les usages et les coûts depuis une même console.
