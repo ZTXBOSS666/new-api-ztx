@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toIntlLocale } from '@/i18n/languages'
 import { hasPermission } from '@/lib/admin-permissions'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, formatQuota } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -93,12 +93,12 @@ export function LotteryPanel() {
               <dd>{formatNumber(data.winner_limit, locale)}</dd>
             </div>
             <div>
-              <dt>{t('Reward (quota points)')}</dt>
-              <dd>{formatNumber(data.reward_quota, locale)}</dd>
+              <dt>{t('Reward (balance)')}</dt>
+              <dd>{formatQuota(data.reward_quota)}</dd>
             </div>
             <div>
-              <dt>{t('Entry fee (quota points)')}</dt>
-              <dd>{formatNumber(data.entry_fee, locale)}</dd>
+              <dt>{t('Entry fee (balance)')}</dt>
+              <dd>{formatQuota(data.entry_fee)}</dd>
             </div>
           </dl>
           <div className='flex flex-wrap gap-2'>

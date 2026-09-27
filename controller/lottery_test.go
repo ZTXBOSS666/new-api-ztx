@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -289,12 +290,31 @@ func TestLotteryPublicPrivacyAndAdminPermission(t *testing.T) {
 	}
 }
 
+func TestLotteryAdminBalanceInputConvertsToQuota(t *testing.T) {
+	db := lotteryTestDB(t)
+	_ = db
+	oldDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = oldDisplayType
+	})
+
+	result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", `{"enabled":true,"daily_participant_limit":10,"daily_winner_limit":2,"reward_quota":1.5,"entry_fee":0.25}`, UpdateLotteryAdmin, &authz.LotteryManage)
+	require.Equal(t, http.StatusOK, result.Code)
+	var response struct {
+		Data model.LotteryConfig `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(result.Body.Bytes(), &response))
+	assert.Equal(t, 750000, response.Data.RewardQuota)
+	assert.Equal(t, 125000, response.Data.EntryFee)
+}
+
 func TestLotteryConfigValidationAndReadonlyStatus(t *testing.T) {
 	db := lotteryTestDB(t)
 	for _, config := range []model.LotteryConfig{{Enabled: true}, {Enabled: true, DailyParticipantLimit: 1, DailyWinnerLimit: 2, RewardQuota: 1}, {Enabled: true, DailyParticipantLimit: 1, DailyWinnerLimit: 1, RewardQuota: common.MaxWalletQuota + 1}, {Enabled: true, DailyParticipantLimit: 1, DailyWinnerLimit: 1, RewardQuota: 1, EntryFee: common.MaxWalletQuota + 1}, {DailyParticipantLimit: -1}, {EntryFee: -1}} {
 		assert.ErrorIs(t, model.ValidateLotteryConfig(config), model.ErrLotteryInvalidConfig)
 	}
-	for _, reward := range []string{"1.5", "9007199254740992", "-1"} {
+	for _, reward := range []string{"9007199254740992", "-1"} {
 		result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", fmt.Sprintf(`{"enabled":true,"daily_participant_limit":1,"daily_winner_limit":1,"reward_quota":%s,"entry_fee":0}`, reward), UpdateLotteryAdmin, &authz.LotteryManage)
 		assert.Equal(t, 400, result.Code)
 	}

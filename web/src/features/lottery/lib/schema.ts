@@ -5,8 +5,8 @@ export const lotteryConfigSchema = z
     enabled: z.boolean(),
     daily_participant_limit: z.number().int().min(0).max(1000000),
     daily_winner_limit: z.number().int().min(0).max(100000),
-    reward_quota: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    entry_fee: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    reward_quota: z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),
+    entry_fee: z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),
   })
   .superRefine((value, context) => {
     if (

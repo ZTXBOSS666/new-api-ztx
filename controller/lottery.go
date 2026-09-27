@@ -2,21 +2,54 @@ package controller
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 type lotteryConfigRequest struct {
-	Enabled               bool `json:"enabled"`
-	DailyParticipantLimit int  `json:"daily_participant_limit"`
-	DailyWinnerLimit      int  `json:"daily_winner_limit"`
-	RewardQuota           int  `json:"reward_quota"`
-	EntryFee              int  `json:"entry_fee"`
+	Enabled               bool    `json:"enabled"`
+	DailyParticipantLimit int     `json:"daily_participant_limit"`
+	DailyWinnerLimit      int     `json:"daily_winner_limit"`
+	RewardQuota           float64 `json:"reward_quota"`
+	EntryFee              float64 `json:"entry_fee"`
+}
+
+// lotteryBalanceToQuota converts the admin-entered balance display amount into
+// the database's native quota units. The frontend uses the same currency
+// configuration; the server repeats the conversion so the client cannot set a
+// different effective reward or fee.
+func lotteryBalanceToQuota(amount float64) (int, error) {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
+		return 0, model.ErrLotteryInvalidConfig
+	}
+	balance := decimal.NewFromFloat(amount)
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		if common.QuotaPerUnit <= 0 {
+			return 0, model.ErrLotteryInvalidConfig
+		}
+		balance = balance.Div(decimal.NewFromFloat(common.QuotaPerUnit))
+	} else {
+		rate := operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate)
+		if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+			return 0, model.ErrLotteryInvalidConfig
+		}
+		balance = balance.Div(decimal.NewFromFloat(rate))
+	}
+	quota, err := common.WalletQuotaFromDecimalStrict(
+		balance.Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
+	)
+	if err != nil {
+		return 0, model.ErrLotteryInvalidConfig
+	}
+	return quota, nil
 }
 
 func lotteryError(c *gin.Context, err error) {
@@ -88,7 +121,17 @@ func UpdateLotteryAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "抽奖配置格式无效"})
 		return
 	}
-	config, err := model.UpdateLotteryConfig(request.Enabled, request.DailyParticipantLimit, request.DailyWinnerLimit, request.RewardQuota, request.EntryFee)
+	rewardQuota, err := lotteryBalanceToQuota(request.RewardQuota)
+	if err != nil {
+		lotteryError(c, err)
+		return
+	}
+	entryFee, err := lotteryBalanceToQuota(request.EntryFee)
+	if err != nil {
+		lotteryError(c, err)
+		return
+	}
+	config, err := model.UpdateLotteryConfig(request.Enabled, request.DailyParticipantLimit, request.DailyWinnerLimit, rewardQuota, entryFee)
 	if err != nil {
 		lotteryError(c, err)
 		return

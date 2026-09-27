@@ -25,6 +25,17 @@ describe('lotteryConfigSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts decimal balance amounts', () => {
+    const result = lotteryConfigSchema.safeParse({
+      enabled: true,
+      daily_participant_limit: 5,
+      daily_winner_limit: 1,
+      reward_quota: 1.5,
+      entry_fee: 0.25,
+    })
+    expect(result.success).toBe(true)
+  })
+
   it('rejects more winners than participants', () => {
     const result = lotteryConfigSchema.safeParse({
       enabled: true,

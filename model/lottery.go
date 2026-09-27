@@ -28,7 +28,7 @@ var (
 	ErrLotteryHistoricalWinner  = errors.New("historical winners cannot join again")
 	ErrLotteryInvalidConfig     = errors.New("invalid lottery configuration")
 	ErrLotteryUserUnavailable   = errors.New("user is unavailable")
-	ErrLotteryInsufficientQuota = errors.New("点数余额不足，无法报名抽奖")
+	ErrLotteryInsufficientQuota = errors.New("余额不足，无法报名抽奖")
 )
 
 type LotteryConfig struct {

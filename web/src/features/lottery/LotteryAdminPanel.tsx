@@ -22,6 +22,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { hasPermission } from '@/lib/admin-permissions'
+import {
+  formatQuota,
+  getEditableQuotaStep,
+  parseQuotaFromDollars,
+  quotaUnitsToEditableAmount,
+} from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -37,13 +43,26 @@ function LotteryConfigForm(props: {
   const queryClient = useQueryClient()
   const form = useForm<LotteryConfig>({
     resolver: zodResolver(lotteryConfigSchema),
-    defaultValues: props.config,
+    defaultValues: {
+      ...props.config,
+      reward_quota: quotaUnitsToEditableAmount(props.config.reward_quota),
+      entry_fee: quotaUnitsToEditableAmount(props.config.entry_fee),
+    },
   })
   const [pending, setPending] = useState<LotteryConfig | null>(null)
   const save = useMutation({
-    mutationFn: saveLottery,
+    mutationFn: (config: LotteryConfig) =>
+      saveLottery({
+        ...config,
+        reward_quota: parseQuotaFromDollars(config.reward_quota),
+        entry_fee: parseQuotaFromDollars(config.entry_fee),
+      }),
     onSuccess: (config) => {
-      form.reset(config)
+      form.reset({
+        ...config,
+        reward_quota: quotaUnitsToEditableAmount(config.reward_quota),
+        entry_fee: quotaUnitsToEditableAmount(config.entry_fee),
+      })
       setPending(null)
       toast.success(t('Lottery settings saved'))
       void queryClient.invalidateQueries({ queryKey: ['lottery'] })
@@ -63,12 +82,12 @@ function LotteryConfigForm(props: {
     },
     {
       name: 'reward_quota' as const,
-      label: t('Reward per winner (native quota points)'),
+      label: t('Reward per winner (balance)'),
       max: Number.MAX_SAFE_INTEGER,
     },
     {
       name: 'entry_fee' as const,
-      label: t('Entry fee per participant (native quota points)'),
+      label: t('Entry fee per participant (balance)'),
       max: Number.MAX_SAFE_INTEGER,
     },
   ]
@@ -98,7 +117,7 @@ function LotteryConfigForm(props: {
                           type='number'
                           min={0}
                           max={item.max}
-                          step={1}
+                          step={getEditableQuotaStep()}
                           {...field}
                           onChange={(event) =>
                             field.onChange(
@@ -113,7 +132,7 @@ function LotteryConfigForm(props: {
                       {form.formState.errors[item.name] && (
                         <p role='alert' className='text-destructive text-sm'>
                           {t(
-                            'Use whole numbers within the allowed limits; winners cannot exceed participants.'
+                            'Use valid balance amounts within the configured display precision; winners cannot exceed participants.'
                           )}
                         </p>
                       )}
@@ -140,7 +159,7 @@ function LotteryConfigForm(props: {
             </fieldset>
             <p className='text-muted-foreground text-sm'>
               {t(
-                "Participant limit: 1–1,000,000. Winner limit: 1–100,000. Reward: 1–9,007,199,254,740,991 quota points. Entry fee: 0–9,007,199,254,740,991 quota points (0 means free entry, charged from the participant's balance). No default reward is configured."
+                'Participant limit: 1–1,000,000. Winner limit: 1–100,000. Reward and entry fee use the current balance display unit; internally 1 USD equals 500,000 quota points. Entry fee 0 means free entry. No default reward is configured.'
               )}
             </p>
             <Button type='submit' disabled={!props.canManage || save.isPending}>
@@ -238,13 +257,13 @@ export function LotteryAdminPanel() {
       {data.round && (
         <p>
           {t(
-            'Round snapshot: {{date}}, {{participants}} participants, {{winners}} winners, {{reward}} quota points each, entry fee {{fee}}',
+            'Round snapshot: {{date}}, {{participants}} participants, {{winners}} winners, {{reward}} balance each, entry fee {{fee}} balance',
             {
               date: data.round.draw_date,
               participants: data.round.participant_limit,
               winners: data.round.winner_limit,
-              reward: data.round.reward_quota,
-              fee: data.round.entry_fee,
+              reward: formatQuota(data.round.reward_quota),
+              fee: formatQuota(data.round.entry_fee),
             }
           )}
         </p>
