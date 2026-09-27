@@ -2,365 +2,205 @@
 
 ![new-api](/web/public/logo.png)
 
-# New API
+# New API ZTX
 
-**An AI gateway for models, applications, and agents**
-
-<p align="center">
-  <a href="./README.zh_CN.md">简体中文</a> |
-  <a href="./README.zh_TW.md">繁體中文</a> |
-  <strong>English</strong> |
-  <a href="./README.fr.md">Français</a> |
-  <a href="./README.ja.md">日本語</a>
-</p>
+**连接模型、应用与 Agent 的自托管 AI 网关**
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/Calcium-Ion/new-api/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Calcium-Ion/new-api?color=brightgreen" alt="license">
-  </a><!--
-  --><a href="https://github.com/Calcium-Ion/new-api/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Calcium-Ion/new-api?color=brightgreen&include_prereleases" alt="release">
-  </a><!--
-  --><a href="https://hub.docker.com/r/CalciumIon/new-api">
-    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a>
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/badge.svg"/>
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/20180" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/20180" alt="QuantumNous%2Fnew-api | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
-  </a>
-  <br>
-  <a href="https://hellogithub.com/repository/QuantumNous/new-api" target="_blank">
-    <img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=539ac4217e69431684ad4a0bab768811&claim_uid=tbFPfKIDHpc4TzR" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" />
-  </a><!--
-  -->
-  <a href="https://atomgit.com/QuantumNous/new-api" target="_blank">
-    <img alt="AtomGit G-Star" src="https://atomgit.com/QuantumNous/new-api/star/new_badge.svg" width="250" height="55" />
-  </a>
-</p>
-
-<p align="center">
-  <a href="#capabilities">Capabilities</a> •
-  <a href="#quick-start">Quick start</a> •
-  <a href="#deployment">Deployment</a> •
-  <a href="#development">Development</a> •
-  <a href="#documentation">Documentation</a>
+  <a href="https://github.com/ZTXBOSS666/new-api-ztx">项目主页</a> |
+  <a href="https://github.com/ZTXBOSS666/new-api-ztx/releases">发布版本</a> |
+  <a href="https://github.com/ZTXBOSS666/new-api-ztx/issues">问题反馈</a>
 </p>
 
 </div>
 
 ---
 
-> [!NOTE]
-> **Customized fork** — this repository is a fork of [QuantumNous/new-api](https://github.com/QuantumNous/new-api) with two extra changes: a built-in **Daily Lottery** module, and the removal of the front-end update checker.
+## 项目简介
 
-### 🎁 Fork additions
+这是基于 [QuantumNous/new-api](https://github.com/QuantumNous/new-api) 二次开发的中文版本，仓库地址为：
 
-**Daily lottery** (sidebar → Daily lottery)
+<https://github.com/ZTXBOSS666/new-api-ztx>
 
-- Admins configure the daily participant limit, the daily winner limit, the per-winner reward and the per-entry fee — all in native quota points.
-- The entry fee is deducted from the participant's balance inside the same database transaction that creates the entry, so a failed entry never charges anything; `0` means free entry.
-- The previous day is drawn automatically at 00:00 Beijing time (UTC+8) with a cryptographically secure shuffle; rewards are credited in the same transaction.
-- One entry per user per Beijing day; a user who has ever won can never enter again; participant names are masked by the server and shown in full only inside the authorized admin view.
-- Users and administrators get standalone pages — `/lottery` and `/lottery-admin` — which are no longer mixed into the dashboard section tabs.
+项目面向合法授权的 AI API 网关、组织内部鉴权、多模型管理、用量统计、成本核算和私有化部署场景。使用者需要自行取得上游 API Key、模型服务和接口权限，并遵守上游服务条款及适用法律法规。
 
-**Update checker removed**
+## 二改功能
 
-The front-end no longer calls the GitHub releases API. The header only shows the build version injected at compile time from the `VERSION` file via `-X github.com/QuantumNous/new-api/common.Version`.
+### 每日抽奖
 
-## 📝 Project Description
+- 侧边栏提供独立的「每日抽奖」入口。
+- 用户页面：`/lottery`。
+- 管理页面：`/lottery-admin`。
+- 管理员可以配置每日参与人数上限、每日中奖人数、每位中奖奖金和每次报名费用。
+- 所有金额均使用原生额度点数；报名费用在创建报名记录的同一数据库事务中扣除。
+- 报名失败会整体回滚，不会产生扣费；费用填写 `0` 表示免费报名。
+- 每天北京时间 00:00 自动结算前一天，使用安全随机源抽取中奖用户并自动入账。
+- 每个用户每天最多报名一次；历史中奖用户永久不能再次报名。
+- 普通页面只显示掩码用户名，授权管理页面才显示完整用户名。
 
-New API is a self-hosted AI gateway for applications, agents, and teams. Connect upstream model services, expose a consistent API to your clients, and manage routing, access, usage, and costs in one place.
+### 版本展示
 
-Use it to share authorized model access across a team, switch providers without configuring every client again, or operate a private multi-model service with a web console. Upstreams include OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, Vertex AI, DeepSeek, Qwen, and other compatible services.
-
-> [!IMPORTANT]
-> - This project is intended solely for lawful and authorized AI API gateway, organization-level authentication, multi-model management, usage analytics, cost accounting, and private deployment scenarios.
-> - Users must lawfully obtain upstream API keys, accounts, model services, and interface permissions, and must comply with upstream terms of service and applicable laws and regulations.
-> - Users should ensure their use complies with upstream terms of service and applicable laws and regulations.
-> - When providing generative AI services to the public, users should comply with applicable regulatory requirements and fulfill all filing, licensing, content safety, real-name verification, log retention, tax, and upstream authorization obligations required by their jurisdiction.
-
-<!-- -->
-
-> [!WARNING]
-> When operating this project as a public generative AI service or API resale service, users should first complete all required filing, licensing, content safety, real-name verification, log retention, tax, payment, and upstream authorization obligations.
-
----
-
-## 🤝 Trusted Partners
-
-<p align="center">
-  <em>No particular order</em>
-</p>
-
-<p align="center">
-  <a href="https://www.cherry-ai.com/" target="_blank">
-    <img src="./docs/images/cherry-studio.png" alt="Cherry Studio" height="80" />
-  </a><!--
-  --><a href="https://github.com/iOfficeAI/AionUi/" target="_blank">
-    <img src="./docs/images/aionui.png" alt="Aion UI" height="80" />
-  </a><!--
-  --><a href="https://bda.pku.edu.cn/" target="_blank">
-    <img src="./docs/images/pku.png" alt="Peking University" height="80" />
-  </a><!--
-  --><a href="https://www.compshare.cn/?ytag=GPU_yy_gh_newapi" target="_blank">
-    <img src="./docs/images/ucloud.png" alt="UCloud" height="80" />
-  </a><!--
-  --><a href="https://www.aliyun.com/" target="_blank">
-    <img src="./docs/images/aliyun.png" alt="Alibaba Cloud" height="80" />
-  </a><!--
-  --><a href="https://io.net/" target="_blank">
-    <img src="./docs/images/io-net.png" alt="IO.NET" height="80" />
-  </a>
-</p>
-
----
-
-## 🙏 Special Thanks
-
-<p align="center">
-  <a href="https://www.jetbrains.com/?from=new-api" target="_blank">
-    <img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo" width="120" />
-  </a>
-</p>
-
-<p align="center">
-  <strong>Thanks to <a href="https://www.jetbrains.com/?from=new-api">JetBrains</a> for providing free open-source development license for this project</strong>
-</p>
-
----
-
-<a id="capabilities"></a>
-
-## Capabilities
-
-| Area | What you can do |
-| --- | --- |
-| Model access | Use OpenAI Chat Completions, Responses, Anthropic Messages, and Gemini APIs; stream responses and use tools, reasoning, and multimodal inputs where supported |
-| Routing | Configure model mappings, channel priorities and weights, retries, channel affinity, and multiple upstream keys |
-| Usage and costs | Manage quotas, subscriptions, usage logs, cache accounting, and expression-based pricing for different usage tiers |
-| Access control | Manage users, groups, fine-grained permissions, and API key restrictions; use OAuth/OIDC, passkeys, two-factor authentication, and login session management |
-| Asynchronous tasks | Extend image, video, and other task APIs with JavaScript plugins, including task status and output retrieval |
-| Web console | Configure channels and models, inspect usage and audit logs, and try models in the playground; available in English, Simplified Chinese, Traditional Chinese, French, Japanese, Russian, and Vietnamese |
-
-### Protocols and endpoints
-
-| Interface | Common endpoints |
-| --- | --- |
-| OpenAI Chat / Responses | `POST /v1/chat/completions`, `POST /v1/responses` |
-| Anthropic Messages | `POST /v1/messages` |
-| Gemini | `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent` |
-| Realtime / Responses WebSocket | `GET /v1/realtime`, `GET /v1/responses` (WebSocket upgrade) |
-| Images / audio | `/v1/images/generations`, `/v1/images/edits`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations` |
-| Embeddings / rerank | `POST /v1/embeddings`, `POST /v1/rerank` |
-| Task plugins | `POST /v1/tasks/{pluginKey}`, `GET /v1/tasks/{taskId}`, plus routes declared by each plugin |
-
-[RelayKit](./relaykit/README.md) provides request, response, and streaming conversion between the four text protocols. Available features depend on the channel, upstream model, and conversion path; protocol-specific tools and fields may not map exactly. WebSocket support also requires a compatible upstream and channel configuration.
-
-This README describes the current source tree. Check the release notes for the version you deploy.
-
-<a id="quick-start"></a>
-
-## Quick start
-
-### Try locally with Docker
-
-This starts a single instance with SQLite and binds it to localhost:
+- 移除前端 GitHub 更新检测，不再自动请求上游 GitHub Release 接口。
+- 页头仅显示编译时注入的版本号。
+- 版本号来自根目录 `VERSION` 文件，并通过以下参数注入：
 
 ```bash
-mkdir -p data
-docker run --name new-api -d --restart unless-stopped \
-  -p 127.0.0.1:3000:3000 \
+-X github.com/QuantumNous/new-api/common.Version
+```
+
+## 功能概览
+
+| 功能 | 说明 |
+| --- | --- |
+| 模型接入 | 支持 OpenAI、Anthropic、Gemini、Azure OpenAI、AWS Bedrock、DeepSeek、通义千问及其他兼容服务 |
+| 渠道调度 | 模型映射、渠道优先级、权重、失败重试和多密钥管理 |
+| 用量与成本 | 额度、订阅、用量日志、缓存计费和阶梯定价 |
+| 访问控制 | 用户、分组、细粒度权限、API Key、OAuth/OIDC、通行密钥和两步验证 |
+| 异步任务 | 通过 JavaScript 插件扩展图片、视频等任务接口 |
+| Web 控制台 | 渠道管理、模型配置、用量统计、审计日志和 Playground |
+
+## 快速开始
+
+### Docker 单机启动
+
+本项目的 Docker 镜像由 GitHub Actions 构建并发布到你的 GitHub Container Registry：
+
+```bash
+docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.1-ztx
+docker run --name new-api-ztx -d --restart unless-stopped \
+  -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  calciumion/new-api:latest
+  ghcr.io/ztxboss666/new-api-ztx:v1.0.1-ztx
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and complete the setup wizard to create the administrator account. The `data` directory persists the SQLite database across container replacements.
+打开 <http://localhost:3000>，按照初始化向导创建管理员账号。SQLite 数据会保存在当前目录的 `data` 文件夹中。
 
-### Make your first request
-
-1. Add a channel with your upstream API key, available models, and group assignment; run a channel test.
-2. Configure model pricing and ensure the user has quota or a valid subscription.
-3. Create an API key in the console with access to the same group and models.
-4. Set your client's base URL to `http://localhost:3000/v1` for OpenAI-compatible clients and use the **New API-issued key**.
-
-Set `NEW_API_KEY` in your shell to that key. List the models accessible to it:
+如果 GHCR 镜像为私有镜像，先登录：
 
 ```bash
-curl --fail-with-body http://localhost:3000/v1/models \
-  -H "Authorization: Bearer ${NEW_API_KEY}"
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u ZTXBOSS666 --password-stdin
 ```
-
-Then call Responses, replacing `your-enabled-model` with an enabled model that supports this interface:
-
-```bash
-curl --fail-with-body http://localhost:3000/v1/responses \
-  -H "Authorization: Bearer ${NEW_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"your-enabled-model","input":"Hello!"}'
-```
-
-<a id="deployment"></a>
-
-## Deployment
 
 ### Docker Compose
 
-The repository's [Compose configuration](./docker-compose.yml) starts **New API + PostgreSQL + Redis** by default. It also contains examples for MySQL and a separate ClickHouse log database.
+仓库内的 [docker-compose.yml](./docker-compose.yml) 默认使用 PostgreSQL、Redis 和 New API。正式部署前必须修改数据库密码、Redis 密码、`SESSION_SECRET` 和其他敏感配置。
 
 ```bash
-git clone https://github.com/QuantumNous/new-api.git
-cd new-api
-```
-
-Before starting, edit `docker-compose.yml`: replace the database and Redis example passwords in both the services and connection strings, and set a persistent random `SESSION_SECRET` (generate one with `openssl rand -hex 32`). For an HTTPS console, configure `SESSION_COOKIE_SECURE=true` and `SESSION_COOKIE_TRUSTED_URL` with its exact public HTTPS origin.
-
-```bash
+git clone https://github.com/ZTXBOSS666/new-api-ztx.git
+cd new-api-ztx
+# 编辑 docker-compose.yml，修改所有默认密码和密钥
 docker compose up -d
 docker compose logs -f new-api
 ```
 
-### Storage and configuration
+### 本地编译运行
 
-| Component | Options |
-| --- | --- |
-| Main database | SQLite, MySQL ≥ 5.7.8, or PostgreSQL ≥ 9.6 |
-| Separate log database | Configure with `LOG_SQL_DSN`; also supports ClickHouse |
-| Cache | Optional Redis plus in-memory caching; use shared Redis when application nodes need shared rate limits |
-| Container platforms | Linux amd64 / arm64 |
-
-| Variable | Purpose |
-| --- | --- |
-| `SQL_DSN` | Main database connection; unset uses SQLite |
-| `LOG_SQL_DSN` | Optional separate log database connection |
-| `REDIS_CONN_STRING` | Redis connection string |
-| `SESSION_SECRET` | Persistent authentication secret; all nodes must use the same value |
-| `CRYPTO_SECRET` | Defaults to `SESSION_SECRET`; nodes sharing Redis must use the same effective value |
-| `SESSION_COOKIE_SECURE` | Set to `true` for an HTTPS console; enables Secure refresh cookies and strict refresh/logout origin checks |
-| `SESSION_COOKIE_TRUSTED_URL` | Required in Secure mode: comma-separated exact HTTPS origins, without paths or wildcards; leave unset for local HTTP |
-| `TRUSTED_PROXIES` | Trusted reverse-proxy IPs/CIDRs, or `none`; explicitly configure for your network |
-
-See the [environment example](./.env.example), [environment reference](https://docs.newapi.ai/en/docs/installation/config-maintenance/environment-variables), and [authentication and session guide](./docs/authentication.md) for full configuration. Configure container variables in Compose's `environment` or `env_file`; copying `.env.example` alone does not inject variables into the container.
-
-For production, put the console behind HTTPS and configure your reverse proxy for streaming and WebSocket upgrades. Persist and back up the database and mounted data. Multi-node deployments must share the main database and authentication secrets; separate Redis instances or in-memory rate limiters count limits independently per node. The session guide describes propagation behavior for each topology.
-
-Pin an image version from [Releases](https://github.com/QuantumNous/new-api/releases), review its upgrade notes, and back up before upgrading. The `latest` tag follows published builds and can change; migrations and compatibility must be assessed for your existing installation.
-
-<a id="development"></a>
-
-## Development and extensions
-
-The backend uses Go and Gin. The web console uses React 19, TypeScript, Rsbuild, TanStack, and Tailwind CSS 4. Use Bun for frontend dependencies and scripts; see [go.mod](./go.mod) for the Go language baseline and [Dockerfile](./Dockerfile) for the container build toolchain.
-
-Build the frontend before starting the backend, which embeds `web/dist`:
+后端编译需要 Go 1.25.1 或更高版本，前端构建需要 Node.js 与项目锁定的前端工具链。进入 `web` 后先生成 `web/dist`，再编译 Go 服务：
 
 ```bash
-# Repository root
 cd web
-bun install --frozen-lockfile
-bun run build
+npm install
+npm run build
 cd ..
-go run .
+
+# Linux amd64
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.1-ztx" -o build/new-api-ztx-linux-amd64 .
+
+# Windows amd64（PowerShell）
+$env:GOOS='windows'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOWORK='off'
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.1-ztx" -o build/new-api-ztx-windows-amd64.exe .
 ```
 
-In a second terminal, start the frontend development server:
+运行前设置 `PORT=3000`、`SQLITE_PATH=./data/one-api.db`，或通过启动参数配置端口和日志目录。
+
+## 发布成品
+
+每次推送版本标签后，GitHub Actions 会自动构建并发布：
+
+- Linux amd64 与 arm64 可执行文件。
+- Windows amd64 可执行文件。
+- GHCR 多架构 Docker 镜像。
+- 对应 SHA-256 校验文件。
+
+发布页：
+
+<https://github.com/ZTXBOSS666/new-api-ztx/releases>
+
+Docker 镜像：
+
+<https://ghcr.io/ztxboss666/new-api-ztx>
+
+## 开发检查
+
+修改 Go 后执行：
 
 ```bash
-cd web
-bun run dev -- --port 5173
+GOPROXY=https://goproxy.cn,direct go test ./controller -run Lottery -count=1
+GOPROXY=https://goproxy.cn,direct go build ./...
 ```
 
-Open [http://localhost:5173](http://localhost:5173); the development server proxies API requests to the backend on port 3000. For a containerized development backend, see [docker-compose.dev.yml](./docker-compose.dev.yml) and the `make dev` target in [makefile](./makefile).
+修改前端后，在 `web` 目录执行：
 
-| Location | Responsibility |
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
+
+前端格式化使用项目自带的 `oxfmt`，不要使用未配置项目风格的默认 Prettier。详细约定请阅读 [AGENTS.md](./AGENTS.md) 和 [web/AGENTS.md](./web/AGENTS.md)。
+
+## 目录说明
+
+| 目录 | 作用 |
 | --- | --- |
-| `router/`, `middleware/`, `controller/` | HTTP routes, access checks, and API handlers |
-| `relay/` | Upstream adapters and request routing |
-| `service/`, `model/` | Business logic and persistence |
-| [relaykit/](./relaykit/README.md) | Independently buildable Go module for protocol DTOs and conversions |
-| [plugins/tasks/](./plugins/tasks/) | JavaScript task plugins; see [Task Plugin API v1](./docs/plugin-api/v1.md) for authoring and host boundaries |
-| `web/` | Web console; see [frontend conventions](./web/AGENTS.md) |
-| [electron/](./electron/README.md) | Desktop wrapper and packaging |
+| `router/`、`middleware/`、`controller/` | 路由、权限和 API 处理 |
+| `model/` | 数据模型、迁移和数据库访问 |
+| `service/` | 业务服务、定时任务和权限逻辑 |
+| `relay/` | 上游模型适配与请求调度 |
+| `web/` | React + TypeScript 管理控制台 |
+| `plugins/tasks/` | JavaScript 任务插件 |
+| `electron/` | Electron 桌面端 |
 
-Read [AGENTS.md](./AGENTS.md) before contributing. Run checks appropriate to your change, including `make test` for the Go modules and `bun run typecheck`, `bun run lint`, `bun run test`, and `bun run build` in `web/` for frontend changes. Changes to RelayKit must also pass `GOWORK=off go build ./...` from `relaykit/`.
+## 许可证与上游署名
 
-<a id="documentation"></a>
+本项目继续遵循原仓库的 [GNU Affero 通用公共许可证 v3.0（AGPLv3）](./LICENSE) 和 [NOTICE](./NOTICE)。修改版本必须保留原仓库要求的界面署名：
 
-## Documentation and community
+> Frontend design and development by New API contributors.
 
-| Resource | Link |
-| --- | --- |
-| Official documentation | [Guides](https://docs.newapi.ai/en/docs) · [Installation](https://docs.newapi.ai/en/docs/installation) · [API reference](https://docs.newapi.ai/en/docs/api) |
-| Project exploration | [DeepWiki](https://deepwiki.com/QuantumNous/new-api) |
-| Questions and discussion | [FAQ](https://docs.newapi.ai/en/docs/support/faq) · [Community](https://docs.newapi.ai/en/docs/support/community-interaction) |
-| Bugs and feature requests | [GitHub Issues](https://github.com/QuantumNous/new-api/issues) |
-| Security reports | Follow the [security policy](./.github/SECURITY.md) for private reporting |
+根据原仓库 NOTICE 的要求，修改版本还必须保留原项目的可见链接：
 
-For bug reports, include the version, deployment method, reproduction steps, and redacted logs. Documentation, translations, provider integrations, and focused regression tests are all welcome contributions.
+<https://github.com/QuantumNous/new-api>
 
----
+本仓库为 ZTXBOSS666 的二次开发版本，源码与本版本修改内容以以下仓库为准：
 
-## 🔗 Related Projects
+<https://github.com/ZTXBOSS666/new-api-ztx>
 
-### Upstream Projects
+第三方依赖声明见 [THIRD-PARTY-LICENSES.md](./THIRD-PARTY-LICENSES.md)。
 
-| Project | Description |
-|------|------|
-| [One API](https://github.com/songquanpeng/one-api) | Original project base |
-| [Midjourney-Proxy](https://github.com/novicezk/midjourney-proxy) | Midjourney interface support |
+## 问题反馈
 
-### Supporting Tools
+请在你的仓库提交 Issue，并附上：
 
-| Project | Description |
-|------|------|
-| [new-api-key-tool](https://github.com/Calcium-Ion/new-api-key-tool) | Key quota query tool |
-| [new-api-horizon](https://github.com/Calcium-Ion/new-api-horizon) | New API high-performance optimized version |
+- 版本号和提交号。
+- 部署方式（源码、二进制或 Docker）。
+- 操作系统和数据库类型。
+- 可复现步骤。
+- 脱敏后的日志和错误信息。
 
----
+问题反馈入口：
 
-## 📜 License
-
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPLv3)](./LICENSE).
-
-Additional terms under AGPLv3 Section 7 apply. Modified versions must preserve
-the author attribution notice `Frontend design and development by New API
-contributors.` in the appropriate legal notices and in any prominent about,
-legal, footer, or attribution location presented by the user interface.
-
-Modified versions that present a user interface must also preserve a visible
-link to the original project: <https://github.com/QuantumNous/new-api>.
-
-This is an open-source project developed based on [One API](https://github.com/songquanpeng/one-api) (MIT License).
-
-If your organization's policies do not permit the use of AGPLv3-licensed software, or if you wish to avoid the open-source obligations of AGPLv3, please contact us at: [support@quantumnous.com](mailto:support@quantumnous.com)
-
-See [NOTICE](./NOTICE) and [third-party licenses](./THIRD-PARTY-LICENSES.md) for attribution and dependency notices.
-
----
-
-## 🌟 Star History
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Calcium-Ion/new-api&type=Date)](https://star-history.com/#Calcium-Ion/new-api&Date)
-
-</div>
+<https://github.com/ZTXBOSS666/new-api-ztx/issues>
 
 ---
 
 <div align="center">
 
-### 💖 Thank you for using New API
+感谢使用 New API ZTX。
 
-If this project is helpful to you, welcome to give us a ⭐️ Star！
-
-**[Official Documentation](https://docs.newapi.ai/en/docs)** • **[Issue Feedback](https://github.com/Calcium-Ion/new-api/issues)** • **[Latest Release](https://github.com/Calcium-Ion/new-api/releases)**
-
-<sub>Built with ❤️ by QuantumNous</sub>
+<a href="https://github.com/ZTXBOSS666/new-api-ztx">项目主页</a> ·
+<a href="https://github.com/ZTXBOSS666/new-api-ztx/releases">发布版本</a> ·
+<a href="https://github.com/ZTXBOSS666/new-api-ztx/issues">问题反馈</a>
 
 </div>
