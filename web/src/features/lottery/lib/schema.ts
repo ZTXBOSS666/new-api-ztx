@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod'
 
 export const lotteryConfigSchema = z
   .object({
@@ -16,26 +16,26 @@ export const lotteryConfigSchema = z
       value.reward_quota === 0 &&
       value.entry_fee === 0
     ) {
-      return;
+      return
     }
     for (const field of [
-      "daily_participant_limit",
-      "daily_winner_limit",
-      "reward_quota",
+      'daily_participant_limit',
+      'daily_winner_limit',
+      'reward_quota',
     ] as const) {
       if (value[field] <= 0) {
         context.addIssue({
-          code: "custom",
+          code: 'custom',
           path: [field],
-          message: "Enter positive whole numbers before enabling the lottery",
-        });
+          message: 'Enter positive whole numbers before enabling the lottery',
+        })
       }
     }
     if (value.daily_winner_limit > value.daily_participant_limit) {
       context.addIssue({
-        code: "custom",
-        path: ["daily_winner_limit"],
-        message: "Winner limit cannot exceed participant limit",
-      });
+        code: 'custom',
+        path: ['daily_winner_limit'],
+        message: 'Winner limit cannot exceed participant limit',
+      })
     }
-  });
+  })

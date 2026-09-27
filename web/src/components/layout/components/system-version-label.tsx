@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useStatus } from "@/hooks/use-status";
-import { cn } from "@/lib/utils";
+import { useStatus } from '@/hooks/use-status'
+import { cn } from '@/lib/utils'
 
 /**
  * 只展示后端注入的版本号。
@@ -26,20 +26,20 @@ import { cn } from "@/lib/utils";
  * 版本号缺失或为占位值时保持安静，不再回退成 “Unknown version”。
  */
 export function SystemVersionLabel(props: { className?: string }) {
-  const { status } = useStatus();
-  const version = status?.version?.trim();
-  if (!version || version === "v0.0.0" || version === "0.0.0") {
-    return null;
+  const { status } = useStatus()
+  const version = status?.version?.trim()
+  if (!version || version === 'v0.0.0' || version === '0.0.0') {
+    return null
   }
   return (
     <span
       className={cn(
-        "text-muted-foreground max-w-32 truncate font-mono text-xs",
-        props.className,
+        'text-muted-foreground max-w-32 truncate font-mono text-xs',
+        props.className
       )}
       title={version}
     >
       {version}
     </span>
-  );
+  )
 }

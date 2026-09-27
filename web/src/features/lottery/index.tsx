@@ -16,12 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from "react-i18next";
+import { useTranslation } from 'react-i18next'
 
-import { SectionPageLayout } from "@/components/layout";
+import { SectionPageLayout } from '@/components/layout'
 
-import { LotteryAdminPanel } from "./LotteryAdminPanel";
-import { LotteryPanel } from "./LotteryPanel";
+import { LotteryAdminPanel } from './LotteryAdminPanel'
+import { LotteryPanel } from './LotteryPanel'
 
 /**
  * 用户端每日抽奖页。
@@ -30,28 +30,28 @@ import { LotteryPanel } from "./LotteryPanel";
  * 因此不会和数据看板的“模型调用分析”“分流”等标签混在一起。
  */
 export function Lottery() {
-  const { t } = useTranslation();
+  const { t } = useTranslation()
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t("Daily lottery")}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('Daily lottery')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <LotteryPanel />
       </SectionPageLayout.Content>
     </SectionPageLayout>
-  );
+  )
 }
 
 /**
  * 管理端抽奖页，独立路由 /lottery-admin，同样脱离数据看板标签。
  */
 export function LotteryAdmin() {
-  const { t } = useTranslation();
+  const { t } = useTranslation()
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t("Manage lottery")}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('Manage lottery')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <LotteryAdminPanel />
       </SectionPageLayout.Content>
     </SectionPageLayout>
-  );
+  )
 }
