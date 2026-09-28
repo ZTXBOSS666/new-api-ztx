@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toIntlLocale } from '@/i18n/languages'
 import { hasPermission } from '@/lib/admin-permissions'
-import { formatNumber, formatQuota } from '@/lib/format'
+import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -54,8 +54,6 @@ export function LotteryPanel() {
   let label = t('Join daily lottery')
   if (!data.enabled) {
     label = t('Lottery entries disabled')
-  } else if (data.historical_winner) {
-    label = t('Already won — no further entries')
   } else if (data.joined) {
     label = t('Already joined today')
   } else if (data.participant_count >= data.participant_limit) {
@@ -63,7 +61,6 @@ export function LotteryPanel() {
   }
   const disabled =
     !data.enabled ||
-    data.historical_winner ||
     data.joined ||
     data.settled ||
     data.participant_count >= data.participant_limit ||
@@ -94,11 +91,11 @@ export function LotteryPanel() {
             </div>
             <div>
               <dt>{t('Reward (balance)')}</dt>
-              <dd>{formatQuota(data.reward_quota)}</dd>
+              <dd>{`$${data.reward_balance.toFixed(2)}`}</dd>
             </div>
             <div>
               <dt>{t('Entry fee (balance)')}</dt>
-              <dd>{formatQuota(data.entry_fee)}</dd>
+              <dd>{`$${data.entry_fee_balance.toFixed(2)}`}</dd>
             </div>
           </dl>
           <div className='flex flex-wrap gap-2'>

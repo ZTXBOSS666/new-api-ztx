@@ -8,8 +8,8 @@ describe('lotteryConfigSchema', () => {
       enabled: true,
       daily_participant_limit: 0,
       daily_winner_limit: 0,
-      reward_quota: 0,
-      entry_fee: 0,
+      reward_balance: 0,
+      entry_fee_balance: 0,
     })
     expect(result.success).toBe(false)
   })
@@ -19,8 +19,8 @@ describe('lotteryConfigSchema', () => {
       enabled: false,
       daily_participant_limit: 0,
       daily_winner_limit: 0,
-      reward_quota: 0,
-      entry_fee: 0,
+      reward_balance: 0,
+      entry_fee_balance: 0,
     })
     expect(result.success).toBe(true)
   })
@@ -30,8 +30,8 @@ describe('lotteryConfigSchema', () => {
       enabled: true,
       daily_participant_limit: 5,
       daily_winner_limit: 1,
-      reward_quota: 1.5,
-      entry_fee: 0.25,
+      reward_balance: 1.5,
+      entry_fee_balance: 0.25,
     })
     expect(result.success).toBe(true)
   })
@@ -41,8 +41,8 @@ describe('lotteryConfigSchema', () => {
       enabled: true,
       daily_participant_limit: 1,
       daily_winner_limit: 2,
-      reward_quota: 1,
-      entry_fee: 1,
+      reward_balance: 1,
+      entry_fee_balance: 1,
     })
     expect(result.success).toBe(false)
   })
@@ -53,8 +53,8 @@ describe('lotteryConfigSchema', () => {
         enabled: true,
         daily_participant_limit: 5,
         daily_winner_limit: 1,
-        reward_quota: 10,
-        entry_fee: -1,
+        reward_balance: 10,
+        entry_fee_balance: -1,
       }).success
     ).toBe(false)
     expect(
@@ -62,8 +62,8 @@ describe('lotteryConfigSchema', () => {
         enabled: true,
         daily_participant_limit: 5,
         daily_winner_limit: 1,
-        reward_quota: 10,
-        entry_fee: 0,
+        reward_balance: 10,
+        entry_fee_balance: 0,
       }).success
     ).toBe(true)
   })

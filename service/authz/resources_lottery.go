@@ -13,7 +13,7 @@ func init() {
 		LabelKey: "Daily lottery",
 		Actions: []ActionDefinition{
 			{Action: ActionRead, LabelKey: "View lottery names", DescriptionKey: "View unmasked lottery participants and winners", DefaultRoles: []string{BuiltInRoleAdmin}},
-			{Action: "manage", LabelKey: "Manage lottery", DescriptionKey: "Configure daily lottery limits and quota rewards", DefaultRoles: []string{BuiltInRoleAdmin}},
+			{Action: "manage", LabelKey: "Manage lottery", DescriptionKey: "Configure daily lottery limits and USD balance rewards", DefaultRoles: []string{BuiltInRoleAdmin}},
 		},
 	})
 }

@@ -4,11 +4,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -25,7 +27,6 @@ var (
 	ErrLotteryDisabled          = errors.New("lottery is disabled")
 	ErrLotteryAlreadyJoined     = errors.New("already joined today's lottery")
 	ErrLotteryFull              = errors.New("today's lottery is full")
-	ErrLotteryHistoricalWinner  = errors.New("historical winners cannot join again")
 	ErrLotteryInvalidConfig     = errors.New("invalid lottery configuration")
 	ErrLotteryUserUnavailable   = errors.New("user is unavailable")
 	ErrLotteryInsufficientQuota = errors.New("余额不足，无法报名抽奖")
@@ -36,26 +37,29 @@ type LotteryConfig struct {
 	Enabled               bool `json:"enabled"`
 	DailyParticipantLimit int  `json:"daily_participant_limit"`
 	DailyWinnerLimit      int  `json:"daily_winner_limit"`
-	RewardQuota           int  `json:"reward_quota"`
-	// EntryFee 为每次报名的原生额度点数消耗，0 表示免费报名。
-	// default:0 保证旧库 ALTER TABLE 加列后不会留下 NULL。
-	EntryFee  int   `json:"entry_fee" gorm:"not null;default:0"`
-	UpdatedAt int64 `json:"updated_at"`
+	// RewardBalance/EntryFeeBalance 是真实美元余额配置；内部 quota 字段只用于
+	// 已有数据兼容和事务执行，不对前端暴露。
+	RewardBalance   float64 `json:"reward_balance" gorm:"not null;default:0"`
+	EntryFeeBalance float64 `json:"entry_fee_balance" gorm:"not null;default:0"`
+	RewardQuota     int     `json:"-" gorm:"not null;default:0"`
+	EntryFee        int     `json:"-" gorm:"not null;default:0"`
+	UpdatedAt       int64   `json:"updated_at"`
 }
 
 func (LotteryConfig) TableName() string { return "lottery_configs" }
 
 type LotteryRound struct {
-	ID               int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	DrawDate         string `json:"draw_date" gorm:"type:varchar(10);not null;uniqueIndex"`
-	ParticipantLimit int    `json:"participant_limit" gorm:"not null"`
-	WinnerLimit      int    `json:"winner_limit" gorm:"not null"`
-	RewardQuota      int    `json:"reward_quota" gorm:"not null"`
-	// EntryFee 是本轮报名费的快照，中途改配置不影响已开始的轮次。
-	EntryFee  int    `json:"entry_fee" gorm:"not null;default:0"`
-	Status    string `json:"status" gorm:"type:varchar(16);not null;index"`
-	SettledAt int64  `json:"settled_at"`
-	CreatedAt int64  `json:"created_at"`
+	ID               int     `json:"id" gorm:"primaryKey;autoIncrement"`
+	DrawDate         string  `json:"draw_date" gorm:"type:varchar(10);not null;uniqueIndex"`
+	ParticipantLimit int     `json:"participant_limit" gorm:"not null"`
+	WinnerLimit      int     `json:"winner_limit" gorm:"not null"`
+	RewardBalance    float64 `json:"reward_balance" gorm:"not null;default:0"`
+	EntryFeeBalance  float64 `json:"entry_fee_balance" gorm:"not null;default:0"`
+	RewardQuota      int     `json:"-" gorm:"not null;default:0"`
+	EntryFee         int     `json:"-" gorm:"not null;default:0"`
+	Status           string  `json:"status" gorm:"type:varchar(16);not null;index"`
+	SettledAt        int64   `json:"settled_at"`
+	CreatedAt        int64   `json:"created_at"`
 }
 
 func (LotteryRound) TableName() string { return "lottery_rounds" }
@@ -73,7 +77,7 @@ func (LotteryEntry) TableName() string { return "lottery_entries" }
 type LotteryWinner struct {
 	ID               int    `json:"id" gorm:"primaryKey;autoIncrement"`
 	DrawDate         string `json:"draw_date" gorm:"type:varchar(10);not null;uniqueIndex:idx_lottery_winner_date_user"`
-	UserID           int    `json:"user_id" gorm:"not null;uniqueIndex:idx_lottery_winner_date_user;uniqueIndex:idx_lottery_winner_user"`
+	UserID           int    `json:"user_id" gorm:"not null;uniqueIndex:idx_lottery_winner_date_user"`
 	UsernameSnapshot string `json:"username_snapshot" gorm:"type:varchar(255);not null"`
 	RewardQuota      int    `json:"reward_quota" gorm:"not null"`
 	CreditedAt       int64  `json:"credited_at"`
@@ -81,7 +85,35 @@ type LotteryWinner struct {
 
 func (LotteryWinner) TableName() string { return "lottery_winners" }
 
-// InitializeLotteryConfig 只插入关闭的空配置，不覆盖管理员配置。
+func MigrateLotteryBalanceFields() error {
+	var config LotteryConfig
+	if err := DB.First(&config, LotteryConfigID).Error; err == nil {
+		reward, fee := lotteryEffectiveBalances(config)
+		if err := DB.Model(&config).Updates(map[string]any{"reward_balance": reward, "entry_fee_balance": fee}).Error; err != nil {
+			return err
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	var rounds []LotteryRound
+	if err := DB.Find(&rounds).Error; err != nil {
+		return err
+	}
+	for _, round := range rounds {
+		reward, fee := round.RewardBalance, round.EntryFeeBalance
+		if reward == 0 && round.RewardQuota > 0 {
+			reward = lotteryBalanceFromQuota(round.RewardQuota)
+		}
+		if fee == 0 && round.EntryFee > 0 {
+			fee = lotteryBalanceFromQuota(round.EntryFee)
+		}
+		if err := DB.Model(&round).Updates(map[string]any{"reward_balance": reward, "entry_fee_balance": fee}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func InitializeLotteryConfig() error {
 	return DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&LotteryConfig{ID: LotteryConfigID}).Error
 }
@@ -96,15 +128,43 @@ func GetLotteryConfig() (*LotteryConfig, error) {
 	}
 	return &config, err
 }
+func lotteryBalanceFromQuota(quota int) float64 {
+	if common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	return decimal.NewFromInt(int64(quota)).
+		Div(decimal.NewFromFloat(common.QuotaPerUnit)).InexactFloat64()
+}
+
+func lotteryEffectiveBalances(config LotteryConfig) (float64, float64) {
+	reward, fee := config.RewardBalance, config.EntryFeeBalance
+	if reward == 0 && config.RewardQuota > 0 {
+		reward = lotteryBalanceFromQuota(config.RewardQuota)
+	}
+	if fee == 0 && config.EntryFee > 0 {
+		fee = lotteryBalanceFromQuota(config.EntryFee)
+	}
+	return reward, fee
+}
+
 func ValidateLotteryConfig(config LotteryConfig) error {
-	if config.DailyParticipantLimit < 0 || config.DailyParticipantLimit > LotteryMaxParticipants || config.DailyWinnerLimit < 0 || config.DailyWinnerLimit > LotteryMaxWinners || config.RewardQuota < 0 || config.RewardQuota > common.MaxWalletQuota || config.EntryFee < 0 || config.EntryFee > common.MaxWalletQuota {
+	if config.RewardQuota < 0 || config.EntryFee < 0 || config.RewardQuota > common.MaxWalletQuota || config.EntryFee > common.MaxWalletQuota {
 		return ErrLotteryInvalidConfig
 	}
-	// 关闭状态下的全零配置是合法的初始状态；报名费 0 表示免费，不算“已配置”。
-	if !config.Enabled && config.DailyParticipantLimit == 0 && config.DailyWinnerLimit == 0 && config.RewardQuota == 0 && config.EntryFee == 0 {
+	rewardBalance, entryFeeBalance := lotteryEffectiveBalances(config)
+	if math.IsNaN(rewardBalance) || math.IsInf(rewardBalance, 0) || math.IsNaN(entryFeeBalance) || math.IsInf(entryFeeBalance, 0) || rewardBalance < 0 || entryFeeBalance < 0 {
+		return ErrLotteryInvalidConfig
+	}
+	if config.DailyParticipantLimit < 0 || config.DailyParticipantLimit > LotteryMaxParticipants || config.DailyWinnerLimit < 0 || config.DailyWinnerLimit > LotteryMaxWinners {
+		return ErrLotteryInvalidConfig
+	}
+	if rewardBalance > float64(common.MaxWalletQuota)/common.QuotaPerUnit || entryFeeBalance > float64(common.MaxWalletQuota)/common.QuotaPerUnit {
+		return ErrLotteryInvalidConfig
+	}
+	if !config.Enabled && config.DailyParticipantLimit == 0 && config.DailyWinnerLimit == 0 && rewardBalance == 0 && entryFeeBalance == 0 {
 		return nil
 	}
-	if config.DailyParticipantLimit <= 0 || config.DailyWinnerLimit <= 0 || config.RewardQuota <= 0 || config.DailyWinnerLimit > config.DailyParticipantLimit {
+	if config.DailyParticipantLimit <= 0 || config.DailyWinnerLimit <= 0 || rewardBalance <= 0 || config.DailyWinnerLimit > config.DailyParticipantLimit {
 		return ErrLotteryInvalidConfig
 	}
 	return nil
@@ -125,11 +185,23 @@ func lotteryTransaction(fn func(*gorm.DB, *LotteryConfig) error) error {
 	})
 }
 func UpdateLotteryConfig(enabled bool, participantLimit, winnerLimit, rewardQuota, entryFee int) (*LotteryConfig, error) {
-	candidate := LotteryConfig{ID: LotteryConfigID, Enabled: enabled, DailyParticipantLimit: participantLimit, DailyWinnerLimit: winnerLimit, RewardQuota: rewardQuota, EntryFee: entryFee, UpdatedAt: time.Now().Unix()}
+	return UpdateLotteryConfigBalance(enabled, participantLimit, winnerLimit, lotteryBalanceFromQuota(rewardQuota), lotteryBalanceFromQuota(entryFee))
+}
+
+func UpdateLotteryConfigBalance(enabled bool, participantLimit, winnerLimit int, rewardBalance, entryFeeBalance float64) (*LotteryConfig, error) {
+	rewardQuota, err := LotteryBalanceToQuota(rewardBalance)
+	if err != nil {
+		return nil, err
+	}
+	entryFee, err := LotteryBalanceToQuota(entryFeeBalance)
+	if err != nil {
+		return nil, err
+	}
+	candidate := LotteryConfig{ID: LotteryConfigID, Enabled: enabled, DailyParticipantLimit: participantLimit, DailyWinnerLimit: winnerLimit, RewardBalance: rewardBalance, EntryFeeBalance: entryFeeBalance, RewardQuota: rewardQuota, EntryFee: entryFee, UpdatedAt: time.Now().Unix()}
 	if err := ValidateLotteryConfig(candidate); err != nil {
 		return nil, err
 	}
-	err := lotteryTransaction(func(tx *gorm.DB, _ *LotteryConfig) error { return tx.Save(&candidate).Error })
+	err = lotteryTransaction(func(tx *gorm.DB, _ *LotteryConfig) error { return tx.Save(&candidate).Error })
 	return &candidate, err
 }
 
@@ -166,18 +238,22 @@ func JoinLottery(userID int, now time.Time) (*LotteryRound, error) {
 		if user.Status != common.UserStatusEnabled {
 			return ErrLotteryUserUnavailable
 		}
-		if err := tx.Where("user_id = ?", userID).First(&LotteryWinner{}).Error; err == nil {
-			return ErrLotteryHistoricalWinner
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
 		if err := tx.Where("draw_date = ? AND user_id = ?", date, userID).First(&LotteryEntry{}).Error; err == nil {
 			return ErrLotteryAlreadyJoined
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if err := tx.Where("draw_date = ?", date).First(&joinedRound).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-			joinedRound = LotteryRound{DrawDate: date, ParticipantLimit: config.DailyParticipantLimit, WinnerLimit: config.DailyWinnerLimit, RewardQuota: config.RewardQuota, EntryFee: config.EntryFee, Status: LotteryPending, CreatedAt: now.Unix()}
+			rewardBalance, entryFeeBalance := lotteryEffectiveBalances(*config)
+			rewardQuota, quotaErr := LotteryBalanceToQuota(rewardBalance)
+			if quotaErr != nil {
+				return quotaErr
+			}
+			entryFee, feeErr := LotteryBalanceToQuota(entryFeeBalance)
+			if feeErr != nil {
+				return feeErr
+			}
+			joinedRound = LotteryRound{DrawDate: date, ParticipantLimit: config.DailyParticipantLimit, WinnerLimit: config.DailyWinnerLimit, RewardBalance: rewardBalance, EntryFeeBalance: entryFeeBalance, RewardQuota: rewardQuota, EntryFee: entryFee, Status: LotteryPending, CreatedAt: now.Unix()}
 			if err := tx.Create(&joinedRound).Error; err != nil {
 				return err
 			}
@@ -215,9 +291,29 @@ func JoinLottery(userID int, now time.Time) (*LotteryRound, error) {
 		if err := cacheDecrUserQuota(userID, int64(chargedFee)); err != nil {
 			common.SysLog("failed to sync lottery entry fee to user quota cache: " + err.Error())
 		}
-		RecordLog(userID, LogTypeSystem, fmt.Sprintf("Daily lottery %s entry: -%d quota points", date, chargedFee))
+		RecordLog(userID, LogTypeSystem, fmt.Sprintf("参与系统抽奖扣除余额 $%s", lotteryBalanceText(chargedFee)))
 	}
 	return &joinedRound, nil
+}
+
+// lotteryBalanceText renders the stored quota as the real USD balance used by
+// the lottery UI and audit log. The database continues storing native quota.
+func lotteryBalanceText(quota int) string {
+	return decimal.NewFromInt(int64(quota)).
+		Div(decimal.NewFromFloat(common.QuotaPerUnit)).StringFixed(2)
+}
+
+func LotteryBalanceToQuota(balance float64) (int, error) {
+	if math.IsNaN(balance) || math.IsInf(balance, 0) || balance < 0 {
+		return 0, ErrLotteryInvalidConfig
+	}
+	quota, err := common.WalletQuotaFromDecimalStrict(
+		decimal.NewFromFloat(balance).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
+	)
+	if err != nil {
+		return 0, ErrLotteryInvalidConfig
+	}
+	return quota, nil
 }
 
 // cryptoShuffle 使用无模偏差的密码学随机源，均匀无放回。
@@ -233,11 +329,18 @@ func cryptoShuffle(ids []int) error {
 	return nil
 }
 
-// SettleDueLotteryRounds 每个事务只结算最早的过期轮次；关闭报名不取消承诺。
+type lotteryRefund struct {
+	UserID int
+	Quota  int
+}
+
+// SettleDueLotteryRounds 每个事务只结算最早的过期轮次。
+// 合格参与人不足中奖人数时不开奖，退还本轮全部报名费。
 func SettleDueLotteryRounds(now time.Time) error {
 	for {
 		var settled bool
 		var credited []LotteryWinner
+		var refunded []lotteryRefund
 		err := lotteryTransaction(func(tx *gorm.DB, _ *LotteryConfig) error {
 			var round LotteryRound
 			err := lockForUpdate(tx).Where("status = ? AND draw_date < ?", LotteryPending, LotteryDrawDate(now)).Order("draw_date").First(&round).Error
@@ -247,7 +350,7 @@ func SettleDueLotteryRounds(now time.Time) error {
 			if err != nil {
 				return err
 			}
-			if round.RewardQuota <= 0 || round.RewardQuota > common.MaxWalletQuota || round.WinnerLimit <= 0 {
+			if round.RewardQuota <= 0 || round.RewardQuota > common.MaxWalletQuota || round.EntryFee < 0 || round.EntryFee > common.MaxWalletQuota || round.WinnerLimit <= 0 {
 				return ErrLotteryInvalidConfig
 			}
 			var ids []int
@@ -256,7 +359,7 @@ func SettleDueLotteryRounds(now time.Time) error {
 			}
 			eligible := make([]int, 0, len(ids))
 			names := make(map[int]string, len(ids))
-			// 用户行按固定顺序上锁，封禁、删除与额度写入不能穿过本次结算。
+			// 用户行按固定顺序上锁，状态变化与额度写入不能穿过本次结算。
 			for _, id := range ids {
 				var user User
 				err := lockForUpdate(tx).First(&user, id).Error
@@ -269,15 +372,27 @@ func SettleDueLotteryRounds(now time.Time) error {
 				if user.Status != common.UserStatusEnabled {
 					continue
 				}
-				var count int64
-				if err := tx.Model(&LotteryWinner{}).Where("user_id = ?", id).Count(&count).Error; err != nil {
-					return err
-				}
-				if count > 0 {
-					continue
-				}
 				eligible = append(eligible, id)
 				names[id] = user.Username
+			}
+			if len(eligible) < round.WinnerLimit {
+				// 人数不足时不开奖，退还所有已成功扣除的报名费。
+				if round.EntryFee > 0 {
+					for _, id := range ids {
+						result := tx.Model(&User{}).Where("id = ? AND quota <= ?", id, common.MaxWalletQuota-round.EntryFee).Update("quota", gorm.Expr("quota + ?", round.EntryFee))
+						if result.Error != nil {
+							return result.Error
+						}
+						if result.RowsAffected == 1 {
+							refunded = append(refunded, lotteryRefund{UserID: id, Quota: round.EntryFee})
+						}
+					}
+				}
+				if err := tx.Model(&round).Updates(map[string]any{"status": LotterySettled, "settled_at": now.Unix()}).Error; err != nil {
+					return err
+				}
+				settled = true
+				return nil
 			}
 			if err := cryptoShuffle(eligible); err != nil {
 				return err
@@ -307,10 +422,15 @@ func SettleDueLotteryRounds(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		// 中奖记录本身是与余额同事务的不可重复入账凭据；日志是补充展示。
+		for _, refund := range refunded {
+			if err := cacheIncrUserQuota(refund.UserID, int64(refund.Quota)); err != nil {
+				common.SysLog("failed to sync lottery refund to user quota cache: " + err.Error())
+			}
+			RecordLog(refund.UserID, LogTypeSystem, fmt.Sprintf("参与系统抽奖人数不足，退还余额 $%s", lotteryBalanceText(refund.Quota)))
+		}
 		for _, winner := range credited {
 			syncCreditUserQuotaCache(winner.UserID, winner.RewardQuota, "lottery")
-			RecordLog(winner.UserID, LogTypeSystem, fmt.Sprintf("Daily lottery %s: +%d quota points", winner.DrawDate, winner.RewardQuota))
+			RecordLog(winner.UserID, LogTypeSystem, fmt.Sprintf("参与系统抽奖中奖增加余额 $%s", lotteryBalanceText(winner.RewardQuota)))
 		}
 		if !settled {
 			return nil

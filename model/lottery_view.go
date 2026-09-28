@@ -9,12 +9,12 @@ import (
 const LotteryPageSize = 20
 
 type LotteryPerson struct {
-	ID          int    `json:"id"`
-	Username    string `json:"username"`
-	DrawDate    string `json:"draw_date"`
-	JoinedAt    int64  `json:"joined_at"`
-	RewardQuota int    `json:"reward_quota"`
-	IsSelf      bool   `json:"is_self"`
+	ID            int     `json:"id"`
+	Username      string  `json:"username"`
+	DrawDate      string  `json:"draw_date"`
+	JoinedAt      int64   `json:"joined_at"`
+	RewardBalance float64 `json:"reward_balance"`
+	IsSelf        bool    `json:"is_self"`
 }
 type LotteryLists struct {
 	Participants      []LotteryPerson `json:"participants"`
@@ -24,17 +24,15 @@ type LotteryLists struct {
 }
 type LotteryPublicStatus struct {
 	LotteryLists
-	Enabled          bool   `json:"enabled"`
-	DrawDate         string `json:"draw_date"`
-	ParticipantLimit int    `json:"participant_limit"`
-	WinnerLimit      int    `json:"winner_limit"`
-	RewardQuota      int    `json:"reward_quota"`
-	// EntryFee 是报名需要扣除的原生额度点数，0 表示免费。
-	EntryFee         int   `json:"entry_fee"`
-	ParticipantCount int64 `json:"participant_count"`
-	Joined           bool  `json:"joined"`
-	HistoricalWinner bool  `json:"historical_winner"`
-	Settled          bool  `json:"settled"`
+	Enabled          bool    `json:"enabled"`
+	DrawDate         string  `json:"draw_date"`
+	ParticipantLimit int     `json:"participant_limit"`
+	WinnerLimit      int     `json:"winner_limit"`
+	RewardBalance    float64 `json:"reward_balance"`
+	EntryFeeBalance  float64 `json:"entry_fee_balance"`
+	ParticipantCount int64   `json:"participant_count"`
+	Joined           bool    `json:"joined"`
+	Settled          bool    `json:"settled"`
 }
 type LotteryAdminStatus struct {
 	LotteryLists
@@ -83,7 +81,7 @@ func lotteryLists(date string, participantPage, winnerPage, selfID int, plaintex
 		if plaintext {
 			name = winner.UsernameSnapshot
 		}
-		out.Winners = append(out.Winners, LotteryPerson{ID: winner.ID, Username: name, DrawDate: winner.DrawDate, JoinedAt: winner.CreditedAt, RewardQuota: winner.RewardQuota, IsSelf: winner.UserID == selfID})
+		out.Winners = append(out.Winners, LotteryPerson{ID: winner.ID, Username: name, DrawDate: winner.DrawDate, JoinedAt: winner.CreditedAt, RewardBalance: lotteryBalanceFromQuota(winner.RewardQuota), IsSelf: winner.UserID == selfID})
 	}
 	return out, nil
 }
@@ -94,11 +92,19 @@ func GetLotteryPublicStatus(userID int, now time.Time, participantPage, winnerPa
 		return nil, err
 	}
 	date := LotteryDrawDate(now)
-	out := &LotteryPublicStatus{Enabled: config.Enabled, DrawDate: date, ParticipantLimit: config.DailyParticipantLimit, WinnerLimit: config.DailyWinnerLimit, RewardQuota: config.RewardQuota, EntryFee: config.EntryFee}
+	rewardBalance, entryFeeBalance := lotteryEffectiveBalances(*config)
+	out := &LotteryPublicStatus{Enabled: config.Enabled, DrawDate: date, ParticipantLimit: config.DailyParticipantLimit, WinnerLimit: config.DailyWinnerLimit, RewardBalance: rewardBalance, EntryFeeBalance: entryFeeBalance}
 	var round LotteryRound
 	err = DB.Where("draw_date = ?", date).First(&round).Error
 	if err == nil {
-		out.ParticipantLimit, out.WinnerLimit, out.RewardQuota, out.EntryFee, out.Settled = round.ParticipantLimit, round.WinnerLimit, round.RewardQuota, round.EntryFee, round.Status == LotterySettled
+		roundReward, roundFee := round.RewardBalance, round.EntryFeeBalance
+		if roundReward == 0 && round.RewardQuota > 0 {
+			roundReward = lotteryBalanceFromQuota(round.RewardQuota)
+		}
+		if roundFee == 0 && round.EntryFee > 0 {
+			roundFee = lotteryBalanceFromQuota(round.EntryFee)
+		}
+		out.ParticipantLimit, out.WinnerLimit, out.RewardBalance, out.EntryFeeBalance, out.Settled = round.ParticipantLimit, round.WinnerLimit, roundReward, roundFee, round.Status == LotterySettled
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -107,10 +113,6 @@ func GetLotteryPublicStatus(userID int, now time.Time, participantPage, winnerPa
 		return nil, err
 	}
 	out.Joined = count > 0
-	if err := DB.Model(&LotteryWinner{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
-		return nil, err
-	}
-	out.HistoricalWinner = count > 0
 	out.LotteryLists, err = lotteryLists(date, participantPage, winnerPage, userID, false)
 	out.ParticipantCount = out.ParticipantsTotal
 	return out, err
@@ -130,6 +132,12 @@ func GetLotteryAdminStatus(date string, participantPage, winnerPage int) (*Lotte
 	var round LotteryRound
 	err = DB.Where("draw_date = ?", date).First(&round).Error
 	if err == nil {
+		if round.RewardBalance == 0 && round.RewardQuota > 0 {
+			round.RewardBalance = lotteryBalanceFromQuota(round.RewardQuota)
+		}
+		if round.EntryFeeBalance == 0 && round.EntryFee > 0 {
+			round.EntryFeeBalance = lotteryBalanceFromQuota(round.EntryFee)
+		}
 		out.Round = &round
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err

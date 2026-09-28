@@ -15,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service/authz"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -101,8 +100,9 @@ func TestLotteryEntryLimitsSnapshotAndDisabled(t *testing.T) {
 	assert.Equal(t, 17, winners[0].RewardQuota)
 	_, err = model.UpdateLotteryConfig(true, 10, 3, 50, 0)
 	require.NoError(t, err)
-	_, err = model.JoinLottery(winners[0].UserID, now.Add(time.Second))
-	assert.ErrorIs(t, err, model.ErrLotteryHistoricalWinner)
+	round, err = model.JoinLottery(winners[0].UserID, now.Add(24*time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, model.LotteryDrawDate(now.Add(24*time.Hour)), round.DrawDate)
 	round, err = model.JoinLottery(3, now.Add(time.Second))
 	require.NoError(t, err)
 	assert.Equal(t, 50, round.RewardQuota)
@@ -123,13 +123,16 @@ func TestLotteryEligibleOnlyShortfallEmptyAndCatchup(t *testing.T) {
 	}
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 2).Update("status", common.UserStatusDisabled).Error)
 	require.NoError(t, db.Delete(&model.User{}, 3).Error)
-	// 新日报名前补结算；上一日中奖人不能趁启动延迟进入新一日。
-	_, err = model.JoinLottery(1, now.Add(time.Second))
-	assert.ErrorIs(t, err, model.ErrLotteryHistoricalWinner)
+	// 新日报名前补结算：无效参与人导致人数不足时不开奖，但用户次日可以继续报名。
+	round, err := model.JoinLottery(1, now.Add(time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, model.LotteryDrawDate(now.Add(time.Second)), round.DrawDate)
 	var winners []model.LotteryWinner
 	require.NoError(t, db.Find(&winners).Error)
-	require.Len(t, winners, 1)
-	assert.Equal(t, 1, winners[0].UserID)
+	assert.Empty(t, winners)
+	var previous model.LotteryRound
+	require.NoError(t, db.Where("draw_date = ?", "2026-01-01").First(&previous).Error)
+	assert.Equal(t, model.LotterySettled, previous.Status)
 	require.NoError(t, db.Create(&model.LotteryRound{DrawDate: "2025-12-31", ParticipantLimit: 5, WinnerLimit: 5, RewardQuota: 11, Status: model.LotteryPending}).Error)
 	require.NoError(t, model.SettleDueLotteryRounds(now.Add(time.Second)))
 	var empty model.LotteryRound
@@ -173,7 +176,7 @@ func TestLotteryConcurrentSettlementCreditsExactlyOnce(t *testing.T) {
 		sum += user.Quota
 	}
 	assert.Equal(t, 54, sum)
-	assert.Error(t, db.Create(&model.LotteryWinner{DrawDate: "2026-01-05", UserID: winners[0].UserID, RewardQuota: 7}).Error)
+	assert.NoError(t, db.Create(&model.LotteryWinner{DrawDate: "2026-01-05", UserID: winners[0].UserID, RewardQuota: 7}).Error, "a previous winner may win again on a later day")
 }
 
 func TestLotteryConcurrentEntryCannotOverfill(t *testing.T) {
@@ -276,7 +279,7 @@ func TestLotteryPublicPrivacyAndAdminPermission(t *testing.T) {
 		}
 	}
 	require.NoError(t, authz.SetUserPermissions(1, authz.PermissionsMap{"lottery": {"read": false, "manage": false}}))
-	denied := lotteryRequest(t, common.RoleAdminUser, http.MethodPut, "/lottery/admin", `{"enabled":true,"daily_participant_limit":1,"daily_winner_limit":1,"reward_quota":100,"entry_fee":0}`, UpdateLotteryAdmin, &authz.LotteryManage)
+	denied := lotteryRequest(t, common.RoleAdminUser, http.MethodPut, "/lottery/admin", `{"enabled":true,"daily_participant_limit":1,"daily_winner_limit":1,"reward_balance":100,"entry_fee_balance":0}`, UpdateLotteryAdmin, &authz.LotteryManage)
 	assert.Equal(t, 403, denied.Code)
 	for i, name := range []string{"甲", "甲乙", "😀乙"} {
 		lotteryUser(t, db, i+2, name)
@@ -293,20 +296,41 @@ func TestLotteryPublicPrivacyAndAdminPermission(t *testing.T) {
 func TestLotteryAdminBalanceInputConvertsToQuota(t *testing.T) {
 	db := lotteryTestDB(t)
 	_ = db
-	oldDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
-	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
-	t.Cleanup(func() {
-		operation_setting.GetGeneralSetting().QuotaDisplayType = oldDisplayType
-	})
 
-	result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", `{"enabled":true,"daily_participant_limit":10,"daily_winner_limit":2,"reward_quota":1.5,"entry_fee":0.25}`, UpdateLotteryAdmin, &authz.LotteryManage)
+	result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", `{"enabled":true,"daily_participant_limit":10,"daily_winner_limit":2,"reward_balance":1.5,"entry_fee_balance":0.25}`, UpdateLotteryAdmin, &authz.LotteryManage)
 	require.Equal(t, http.StatusOK, result.Code)
 	var response struct {
 		Data model.LotteryConfig `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(result.Body.Bytes(), &response))
-	assert.Equal(t, 750000, response.Data.RewardQuota)
-	assert.Equal(t, 125000, response.Data.EntryFee)
+	assert.Equal(t, 1.5, response.Data.RewardBalance)
+	assert.Equal(t, 0.25, response.Data.EntryFeeBalance)
+}
+
+func TestLotteryShortfallRefundsEntryFeesWithoutWinners(t *testing.T) {
+	db := lotteryTestDB(t)
+	now := lotteryTime()
+	for i := 1; i <= 2; i++ {
+		lotteryUser(t, db, i, fmt.Sprintf("refund%d", i))
+	}
+	_, err := model.UpdateLotteryConfig(true, 10, 3, 17, 2)
+	require.NoError(t, err)
+	for i := 1; i <= 2; i++ {
+		_, err = model.JoinLottery(i, now)
+		require.NoError(t, err)
+	}
+	require.NoError(t, model.SettleDueLotteryRounds(now.Add(24*time.Hour)))
+	var round model.LotteryRound
+	require.NoError(t, db.First(&round).Error)
+	assert.Equal(t, model.LotterySettled, round.Status)
+	var winners int64
+	require.NoError(t, db.Model(&model.LotteryWinner{}).Count(&winners).Error)
+	assert.Zero(t, winners)
+	var users []model.User
+	require.NoError(t, db.Where("id in ?", []int{1, 2}).Find(&users).Error)
+	for _, user := range users {
+		assert.Equal(t, 10, user.Quota, "shortfall must refund the entry fee")
+	}
 }
 
 func TestLotteryConfigValidationAndReadonlyStatus(t *testing.T) {
@@ -315,7 +339,7 @@ func TestLotteryConfigValidationAndReadonlyStatus(t *testing.T) {
 		assert.ErrorIs(t, model.ValidateLotteryConfig(config), model.ErrLotteryInvalidConfig)
 	}
 	for _, reward := range []string{"9007199254740992", "-1"} {
-		result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", fmt.Sprintf(`{"enabled":true,"daily_participant_limit":1,"daily_winner_limit":1,"reward_quota":%s,"entry_fee":0}`, reward), UpdateLotteryAdmin, &authz.LotteryManage)
+		result := lotteryRequest(t, common.RoleRootUser, http.MethodPut, "/lottery/admin", fmt.Sprintf(`{"enabled":true,"daily_participant_limit":1,"daily_winner_limit":1,"reward_balance":%s,"entry_fee_balance":0}`, reward), UpdateLotteryAdmin, &authz.LotteryManage)
 		assert.Equal(t, 400, result.Code)
 	}
 	_, err := model.GetLotteryPublicStatus(1, time.Now(), 1, 1)

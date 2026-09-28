@@ -5,15 +5,15 @@ export type LotteryConfig = {
   enabled: boolean
   daily_participant_limit: number
   daily_winner_limit: number
-  reward_quota: number
-  entry_fee: number
+  reward_balance: number
+  entry_fee_balance: number
 }
 export type LotteryPerson = {
   id: number
   username: string
   draw_date: string
   joined_at: number
-  reward_quota: number
+  reward_balance: number
   is_self: boolean
 }
 export type LotteryLists = {
@@ -27,11 +27,10 @@ export type LotteryStatus = LotteryLists & {
   draw_date: string
   participant_limit: number
   winner_limit: number
-  reward_quota: number
-  entry_fee: number
+  reward_balance: number
+  entry_fee_balance: number
   participant_count: number
   joined: boolean
-  historical_winner: boolean
   settled: boolean
 }
 export type LotteryAdmin = LotteryLists & {
@@ -40,8 +39,8 @@ export type LotteryAdmin = LotteryLists & {
     draw_date: string
     participant_limit: number
     winner_limit: number
-    reward_quota: number
-    entry_fee: number
+    reward_balance: number
+    entry_fee_balance: number
     status: string
     settled_at: number
   }

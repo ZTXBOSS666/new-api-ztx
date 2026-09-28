@@ -381,6 +381,14 @@ func migrateDB() error {
 	if err := InitializeLotteryConfig(); err != nil {
 		return err
 	}
+	if err := MigrateLotteryBalanceFields(); err != nil {
+		return err
+	}
+	if DB.Migrator().HasIndex(&LotteryWinner{}, "idx_lottery_winner_user") {
+		if err := DB.Migrator().DropIndex(&LotteryWinner{}, "idx_lottery_winner_user"); err != nil {
+			return err
+		}
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}

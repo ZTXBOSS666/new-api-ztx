@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { DataTablePagination, StaticDataTable } from '@/components/data-table'
 import { EmptyState } from '@/components/empty-state'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { formatQuota } from '@/lib/format'
 
 import type { LotteryPerson } from './api'
 
@@ -53,7 +52,7 @@ export function LotteryPeople(props: {
     columns.push({
       id: 'reward',
       header: t('Reward (balance)'),
-      cell: (row: LotteryPerson) => formatQuota(row.reward_quota),
+      cell: (row: LotteryPerson) => `$${row.reward_balance.toFixed(2)}`,
     })
   }
   return (

@@ -22,12 +22,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { hasPermission } from '@/lib/admin-permissions'
-import {
-  formatQuota,
-  getEditableQuotaStep,
-  parseQuotaFromDollars,
-  quotaUnitsToEditableAmount,
-} from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -43,26 +37,13 @@ function LotteryConfigForm(props: {
   const queryClient = useQueryClient()
   const form = useForm<LotteryConfig>({
     resolver: zodResolver(lotteryConfigSchema),
-    defaultValues: {
-      ...props.config,
-      reward_quota: quotaUnitsToEditableAmount(props.config.reward_quota),
-      entry_fee: quotaUnitsToEditableAmount(props.config.entry_fee),
-    },
+    defaultValues: props.config,
   })
   const [pending, setPending] = useState<LotteryConfig | null>(null)
   const save = useMutation({
-    mutationFn: (config: LotteryConfig) =>
-      saveLottery({
-        ...config,
-        reward_quota: parseQuotaFromDollars(config.reward_quota),
-        entry_fee: parseQuotaFromDollars(config.entry_fee),
-      }),
+    mutationFn: saveLottery,
     onSuccess: (config) => {
-      form.reset({
-        ...config,
-        reward_quota: quotaUnitsToEditableAmount(config.reward_quota),
-        entry_fee: quotaUnitsToEditableAmount(config.entry_fee),
-      })
+      form.reset(config)
       setPending(null)
       toast.success(t('Lottery settings saved'))
       void queryClient.invalidateQueries({ queryKey: ['lottery'] })
@@ -81,13 +62,13 @@ function LotteryConfigForm(props: {
       max: 100000,
     },
     {
-      name: 'reward_quota' as const,
-      label: t('Reward per winner (balance)'),
+      name: 'reward_balance' as const,
+      label: t('Reward per winner (USD balance)'),
       max: Number.MAX_SAFE_INTEGER,
     },
     {
-      name: 'entry_fee' as const,
-      label: t('Entry fee per participant (balance)'),
+      name: 'entry_fee_balance' as const,
+      label: t('Entry fee per participant (USD balance)'),
       max: Number.MAX_SAFE_INTEGER,
     },
   ]
@@ -117,7 +98,7 @@ function LotteryConfigForm(props: {
                           type='number'
                           min={0}
                           max={item.max}
-                          step={getEditableQuotaStep()}
+                          step={0.01}
                           {...field}
                           onChange={(event) =>
                             field.onChange(
@@ -159,7 +140,7 @@ function LotteryConfigForm(props: {
             </fieldset>
             <p className='text-muted-foreground text-sm'>
               {t(
-                'Participant limit: 1–1,000,000. Winner limit: 1–100,000. Reward and entry fee use the current balance display unit; internally 1 USD equals 500,000 quota points. Entry fee 0 means free entry. No default reward is configured.'
+                'Participant limit: 1–1,000,000. Winner limit: 1–100,000. Reward and entry fee are stored as real USD balances. The internal conversion is handled automatically. Entry fee $0 means free entry. No default reward is configured.'
               )}
             </p>
             <Button type='submit' disabled={!props.canManage || save.isPending}>
@@ -257,13 +238,13 @@ export function LotteryAdminPanel() {
       {data.round && (
         <p>
           {t(
-            'Round snapshot: {{date}}, {{participants}} participants, {{winners}} winners, {{reward}} balance each, entry fee {{fee}} balance',
+            'Round snapshot: {{date}}, {{participants}} participants, {{winners}} winners, {{reward}} USD balance each, entry fee {{fee}} USD',
             {
               date: data.round.draw_date,
               participants: data.round.participant_limit,
               winners: data.round.winner_limit,
-              reward: formatQuota(data.round.reward_quota),
-              fee: formatQuota(data.round.entry_fee),
+              reward: `$${data.round.reward_balance.toFixed(2)}`,
+              fee: `$${data.round.entry_fee_balance.toFixed(2)}`,
             }
           )}
         </p>
