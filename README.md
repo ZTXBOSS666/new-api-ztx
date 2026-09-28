@@ -66,12 +66,12 @@
 本项目的 Docker 镜像由 GitHub Actions 构建并发布到你的 GitHub Container Registry：
 
 ```bash
-docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.1-ztx
+docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.3-ztx
 docker run --name new-api-ztx -d --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  ghcr.io/ztxboss666/new-api-ztx:v1.0.1-ztx
+  ghcr.io/ztxboss666/new-api-ztx:v1.0.3-ztx
 ```
 
 打开 <http://localhost:3000>，按照初始化向导创建管理员账号。SQLite 数据会保存在当前目录的 `data` 文件夹中。
@@ -105,11 +105,11 @@ npm run build
 cd ..
 
 # Linux amd64
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.1-ztx" -o build/new-api-ztx-linux-amd64 .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.3-ztx" -o build/new-api-ztx-linux-amd64 .
 
 # Windows amd64（PowerShell）
 $env:GOOS='windows'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOWORK='off'
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.1-ztx" -o build/new-api-ztx-windows-amd64.exe .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.3-ztx" -o build/new-api-ztx-windows-amd64.exe .
 ```
 
 运行前设置 `PORT=3000`、`SQLITE_PATH=./data/one-api.db`，或通过启动参数配置端口和日志目录。
