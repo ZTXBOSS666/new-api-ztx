@@ -142,6 +142,11 @@ function buildTypeDetailSegments(
   }
 
   if (log.type === 6) {
+    // 异常日志返费会带 content（“今日异常返费 $X”），直接展示；
+    // 异步任务退款没有 content，保留原来的兜底文案。
+    if (log.content) {
+      return [{ text: log.content }]
+    }
     return [{ text: t('Async task refund') }]
   }
 

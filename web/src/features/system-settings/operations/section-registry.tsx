@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { LogRefundAdminPanel } from '@/features/log-refund/LogRefundAdminPanel'
 import { LotteryAdminPanel } from '@/features/lottery/LotteryAdminPanel'
 
 import { SystemBehaviorSection } from '../general/system-behavior-section'
@@ -32,6 +33,11 @@ const OPERATIONS_SECTIONS = [
     id: 'lottery',
     titleKey: 'Daily lottery',
     build: () => <LotteryAdminPanel />,
+  },
+  {
+    id: 'log-refund',
+    titleKey: 'Abnormal log refund',
+    build: () => <LogRefundAdminPanel />,
   },
   {
     id: 'behavior',

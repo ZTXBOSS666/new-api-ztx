@@ -173,6 +173,15 @@ func SetApiRouter(router *gin.Engine) {
 			lotteryAdminRoute.PUT("", middleware.RequirePermission(authz.LotteryManage), controller.UpdateLotteryAdmin)
 		}
 
+		// 异常日志返费（管理端）：开关 + 一键返费
+		logRefundAdminRoute := apiRouter.Group("/log-refund/admin")
+		logRefundAdminRoute.Use(middleware.AdminAuth(), middleware.DisableCache())
+		{
+			logRefundAdminRoute.GET("", controller.GetLogRefundAdmin)
+			logRefundAdminRoute.PUT("", controller.UpdateLogRefundAdmin)
+			logRefundAdminRoute.POST("/run", middleware.CriticalRateLimit(), controller.RunLogRefundAdmin)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())

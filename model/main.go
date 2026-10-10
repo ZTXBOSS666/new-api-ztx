@@ -363,6 +363,9 @@ func migrateDB() error {
 		&LotteryRound{},
 		&LotteryEntry{},
 		&LotteryWinner{},
+		&LogRefundConfig{},
+		&LogRefundRecord{},
+		&LogRefundRun{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
 		&SubscriptionPreConsumeRecord{},
@@ -379,6 +382,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := InitializeLotteryConfig(); err != nil {
+		return err
+	}
+	if err := InitializeLogRefundConfig(); err != nil {
 		return err
 	}
 	if err := MigrateLotteryBalanceFields(); err != nil {

@@ -38,6 +38,16 @@
 - 每个用户每天最多报名一次；次日可以重新报名。
 - 如果合格参与人数少于每日中奖人数，则本轮不开奖，已经扣除的报名费用全部退还。
 
+### 异常日志返费
+
+- 管理入口：系统设置 → 运营设置 → 「异常日志返费」，仅管理员可见、可用。
+- 开启后每天北京时间 00:00 自动结算「刚结束的那一天」；管理员也可在页面上手动点「一键返费」立即执行（可选日期，默认当天）。
+- 判定范围：确实产生了扣费（额度 > 0），且满足「补全 token 为 0 的空返回」或「流以错误结束且输入/输出 token 不完整」其中之一。流状态异常但输入、输出 token 均正常（内容已正常产出）的不予退还。
+- 按用户按天汇总退还，并在用户日志中写入一条「退款」记录，内容形如「今日异常返费 $3.30」；金额按站点「额度展示」设置渲染（美元 / 人民币 / 自定义货币 / 点数）。
+- 幂等：同一条消费日志只会退还一次，重复运行、重复点击、服务重启都不会多退。
+- 某日期只要已完整执行过返费（手动或自动），该日期的「一键返费」按钮会置灰为「已完成返费」，接口层同样拒绝重复执行。
+- 开关默认关闭，需要管理员手动开启。
+
 ### 版本展示
 
 - 移除前端 GitHub 更新检测，不再自动请求上游 GitHub Release 接口。
@@ -66,12 +76,12 @@
 本项目的 Docker 镜像由 GitHub Actions 构建并发布到你的 GitHub Container Registry：
 
 ```bash
-docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.3-ztx
+docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.5-ztx
 docker run --name new-api-ztx -d --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  ghcr.io/ztxboss666/new-api-ztx:v1.0.3-ztx
+  ghcr.io/ztxboss666/new-api-ztx:v1.0.5-ztx
 ```
 
 打开 <http://localhost:3000>，按照初始化向导创建管理员账号。SQLite 数据会保存在当前目录的 `data` 文件夹中。
@@ -105,11 +115,11 @@ npm run build
 cd ..
 
 # Linux amd64
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.3-ztx" -o build/new-api-ztx-linux-amd64 .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.5-ztx" -o build/new-api-ztx-linux-amd64 .
 
 # Windows amd64（PowerShell）
 $env:GOOS='windows'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOWORK='off'
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.3-ztx" -o build/new-api-ztx-windows-amd64.exe .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.5-ztx" -o build/new-api-ztx-windows-amd64.exe .
 ```
 
 运行前设置 `PORT=3000`、`SQLITE_PATH=./data/one-api.db`，或通过启动参数配置端口和日志目录。

@@ -23,6 +23,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(lotterySettlementHandler{})
+	service.RegisterSystemTaskHandler(logRefundHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -182,4 +183,52 @@ func (lotterySettlementHandler) Run(ctx context.Context, task *model.SystemTask,
 		return
 	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]any{"settled": true}, nil)
+}
+
+// logRefundHandler 每天为「刚结束的那一天」执行一次异常返费。
+// Enabled 同时约束开关与「当天是否已跑过」：凌晨 0 点后调度器会自动创建任务，
+// 跑完当天就不再重复创建（缺一次也会在服务器重启后补跑一次），因此不需要额外
+// 的常驻定时器。管理端「一键返费」以 manual 载荷手动入队同一类任务。
+type logRefundHandler struct{}
+
+func (logRefundHandler) Type() string { return model.SystemTaskTypeLogRefund }
+
+func (logRefundHandler) Enabled() bool {
+	config, err := model.GetLogRefundConfig()
+	if err != nil {
+		common.SysError("log refund scheduler: " + err.Error())
+		return false
+	}
+	if !config.Enabled {
+		return false
+	}
+	return model.HasPendingLogRefundAutoRun(time.Now())
+}
+
+func (logRefundHandler) Interval() time.Duration { return 5 * time.Minute }
+
+func (logRefundHandler) NewPayload() any {
+	return model.LogRefundPayload{Date: model.LogRefundPreviousDate(time.Now()), Trigger: "auto"}
+}
+
+func (logRefundHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	payload := model.LogRefundPayload{}
+	if err := task.DecodePayload(&payload); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	targetDate := payload.Date
+	if targetDate == "" {
+		targetDate = model.LogRefundPreviousDate(time.Now())
+	}
+	trigger := payload.Trigger
+	if trigger == "" {
+		trigger = "auto"
+	}
+	result, err := model.RefundAbnormalConsumeLogs(targetDate, time.Now(), trigger)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
 }
