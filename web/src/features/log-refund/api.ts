@@ -29,15 +29,18 @@ export type LogRefundAdmin = {
 type Envelope<T> = { success: boolean; message: string; data: T }
 
 export async function getLogRefundAdmin(date: string): Promise<LogRefundAdmin> {
-  const res = await api.get<Envelope<LogRefundAdmin>>('/api/log-refund/admin', {
-    params: { date },
-  })
+  const res = await api.get<Envelope<LogRefundAdmin>>(
+    '/api/abnormal-refund/admin',
+    {
+      params: { date },
+    }
+  )
   return requireServerSuccess(res.data).data
 }
 
 export async function saveLogRefundEnabled(enabled: boolean): Promise<boolean> {
   const res = await api.put<Envelope<{ enabled: boolean }>>(
-    '/api/log-refund/admin',
+    '/api/abnormal-refund/admin',
     { enabled }
   )
   return requireServerSuccess(res.data).data.enabled
@@ -45,7 +48,7 @@ export async function saveLogRefundEnabled(enabled: boolean): Promise<boolean> {
 
 export async function runLogRefund(date: string): Promise<void> {
   const res = await api.post<Envelope<unknown>>(
-    '/api/log-refund/admin/run',
+    '/api/abnormal-refund/admin/run',
     undefined,
     { params: { date } }
   )

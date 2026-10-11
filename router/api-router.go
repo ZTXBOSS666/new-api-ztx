@@ -174,7 +174,10 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 		// 异常日志返费（管理端）：开关 + 一键返费
-		logRefundAdminRoute := apiRouter.Group("/log-refund/admin")
+		// 注意：路径不要使用 "/log-refund"，它会和上游已有的 "/api/log/..." 共享
+		// "/api/log" 前缀，导致 httprouter 路由树节点分裂、进而破坏 /api/log ->
+		// /api/log/ 的尾斜杠重定向（使用日志页会 404）。这里改用独立前缀。
+		logRefundAdminRoute := apiRouter.Group("/abnormal-refund/admin")
 		logRefundAdminRoute.Use(middleware.AdminAuth(), middleware.DisableCache())
 		{
 			logRefundAdminRoute.GET("", controller.GetLogRefundAdmin)
