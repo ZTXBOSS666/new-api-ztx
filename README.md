@@ -46,6 +46,7 @@
 - 按用户按天汇总退还，并在用户日志中写入一条「退款」记录，内容形如「今日异常返费 $3.30」；金额按站点「额度展示」设置渲染（美元 / 人民币 / 自定义货币 / 点数）。
 - 幂等：同一条消费日志只会退还一次，重复运行、重复点击、服务重启都不会多退。
 - 某日期只要已完整执行过返费（手动或自动），该日期的「一键返费」按钮会置灰为「已完成返费」，接口层同样拒绝重复执行。
+- 自动结算具备补账能力：服务停机跨过凌晨、或某天任务执行时数据尚未落库，重启或下个周期会自动把漏掉的日期逐天补回来（最多回溯 7 天，且不早于功能启用当天）。
 - 开关默认关闭，需要管理员手动开启。
 
 ### 版本展示
@@ -76,12 +77,12 @@
 本项目的 Docker 镜像由 GitHub Actions 构建并发布到你的 GitHub Container Registry：
 
 ```bash
-docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.6-ztx
+docker pull ghcr.io/ztxboss666/new-api-ztx:v1.0.7-ztx
 docker run --name new-api-ztx -d --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=Asia/Shanghai \
   -v "$(pwd)/data:/data" \
-  ghcr.io/ztxboss666/new-api-ztx:v1.0.6-ztx
+  ghcr.io/ztxboss666/new-api-ztx:v1.0.7-ztx
 ```
 
 打开 <http://localhost:3000>，按照初始化向导创建管理员账号。SQLite 数据会保存在当前目录的 `data` 文件夹中。
@@ -115,11 +116,11 @@ npm run build
 cd ..
 
 # Linux amd64
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.6-ztx" -o build/new-api-ztx-linux-amd64 .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.7-ztx" -o build/new-api-ztx-linux-amd64 .
 
 # Windows amd64（PowerShell）
 $env:GOOS='windows'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOWORK='off'
-go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.6-ztx" -o build/new-api-ztx-windows-amd64.exe .
+go build -trimpath -ldflags "-s -w -X github.com/QuantumNous/new-api/common.Version=v1.0.7-ztx" -o build/new-api-ztx-windows-amd64.exe .
 ```
 
 运行前设置 `PORT=3000`、`SQLITE_PATH=./data/one-api.db`，或通过启动参数配置端口和日志目录。
