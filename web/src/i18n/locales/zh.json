@@ -6844,6 +6844,7 @@
     "Already refunded": "已完成返费",
     "This date has already been refunded": "该日期已完成返费",
     "This date has already been refunded (manually or by the daily job), so it cannot be run again.": "该日期已经执行过返费（手动或凌晨自动），不能重复执行。",
-    "Last run for this date": "该日期最近一次运行"
+    "Last run for this date": "该日期最近一次运行",
+    "System Update": "系统更新检测"
   }
 }
