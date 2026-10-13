@@ -3,7 +3,6 @@ package model
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -291,7 +290,7 @@ func JoinLottery(userID int, now time.Time) (*LotteryRound, error) {
 		if err := cacheDecrUserQuota(userID, int64(chargedFee)); err != nil {
 			common.SysLog("failed to sync lottery entry fee to user quota cache: " + err.Error())
 		}
-		RecordLog(userID, LogTypeSystem, fmt.Sprintf("参与系统抽奖扣除余额 $%s", lotteryBalanceText(chargedFee)))
+		RecordLog(userID, LogTypeSystem, common.NewMessage("参与系统抽奖扣除余额 ${{amount}}", map[string]any{"amount": lotteryBalanceText(chargedFee)}))
 	}
 	return &joinedRound, nil
 }
@@ -426,11 +425,11 @@ func SettleDueLotteryRounds(now time.Time) error {
 			if err := cacheIncrUserQuota(refund.UserID, int64(refund.Quota)); err != nil {
 				common.SysLog("failed to sync lottery refund to user quota cache: " + err.Error())
 			}
-			RecordLog(refund.UserID, LogTypeSystem, fmt.Sprintf("参与系统抽奖人数不足，退还余额 $%s", lotteryBalanceText(refund.Quota)))
+			RecordLog(refund.UserID, LogTypeSystem, common.NewMessage("参与系统抽奖人数不足，退还余额 ${{amount}}", map[string]any{"amount": lotteryBalanceText(refund.Quota)}))
 		}
 		for _, winner := range credited {
 			syncCreditUserQuotaCache(winner.UserID, winner.RewardQuota, "lottery")
-			RecordLog(winner.UserID, LogTypeSystem, fmt.Sprintf("参与系统抽奖中奖增加余额 $%s", lotteryBalanceText(winner.RewardQuota)))
+			RecordLog(winner.UserID, LogTypeSystem, common.NewMessage("参与系统抽奖中奖增加余额 ${{amount}}", map[string]any{"amount": lotteryBalanceText(winner.RewardQuota)}))
 		}
 		if !settled {
 			return nil
