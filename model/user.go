@@ -103,6 +103,7 @@ type User struct {
 	AffQuota             int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
 	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId            int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	InvitationRewarded   bool                       `json:"invitation_rewarded" gorm:"type:boolean;column:invitation_rewarded;default:false"` // 邀请奖励是否已发放（首次充值成功后触发）
 	DeletedAt            gorm.DeletedAt             `gorm:"index"`
 	LinuxDOId            string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting              string                     `json:"setting" gorm:"type:text;column:setting"`
@@ -569,8 +570,11 @@ func HardDeleteUserById(id int) (int64, error) {
 	return user.HardDelete()
 }
 
-func inviteUser(inviterId int) error {
-	result := DB.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
+func inviteUser(tx *gorm.DB, inviterId int) error {
+	if tx == nil {
+		tx = DB
+	}
+	result := tx.Model(&User{}).Where("id = ?", inviterId).Updates(map[string]any{
 		"aff_count":   gorm.Expr("aff_count + ?", 1),
 		"aff_quota":   gorm.Expr("aff_quota + ?", common.QuotaForInviter),
 		"aff_history": gorm.Expr("aff_history + ?", common.QuotaForInviter),
@@ -717,17 +721,7 @@ func (user *User) finishInsert(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
-			_ = inviteUser(inviterId)
-		}
-	}
+	// 邀请奖励不再在注册时发放，改为被邀请人首次充值成功后触发（见 RewardInvitationOnFirstTopUp）
 }
 
 func (user *User) FinishInsert(inviterId int) {
@@ -774,16 +768,95 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, common.NewMessage("New user sign-up bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForNewUser)}))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
-			_ = inviteUser(inviterId)
+	// 邀请奖励不再在注册时发放，改为被邀请人首次充值成功后触发（见 RewardInvitationOnFirstTopUp）
+}
+
+// RewardInvitationOnFirstTopUp 在被邀请人首次充值成功时发放邀请奖励。
+// 通过 invitation_rewarded 字段保证只发一次（幂等）。
+// 需要同时满足：inviter_id 不为 0、开关配置了奖励额度、支付合规已确认、尚未发放过。
+// 战天下注：tx 由调用方传入（充值事务本身），主库写操作必须走 tx——
+// 事务内用全局 DB 会另取连接，SQLite 下直接 SQLITE_BUSY 静默失败（实测踩坑）。
+func RewardInvitationOnFirstTopUp(tx *gorm.DB, userId int) {
+	if tx == nil {
+		tx = DB
+	}
+	var user User
+	if err := tx.Where("id = ?", userId).First(&user).Error; err != nil {
+		common.SysError("invitation reward: load user failed: " + err.Error())
+		return
+	}
+	if user.InviterId == 0 || user.InvitationRewarded {
+		return
+	}
+	if common.QuotaForInvitee <= 0 && common.QuotaForInviter <= 0 {
+		return
+	}
+	if !operation_setting.IsPaymentComplianceConfirmed() {
+		return
+	}
+
+	// 原子标记，防止并发充值时重复发放
+	result := tx.Model(&User{}).
+		Where("id = ? AND invitation_rewarded = ?", userId, false).
+		Update("invitation_rewarded", true)
+	if result.Error != nil {
+		common.SysError("invitation reward: mark rewarded failed: " + result.Error.Error())
+		return
+	}
+	if result.RowsAffected != 1 {
+		return
+	}
+
+	if common.QuotaForInvitee > 0 {
+		// 事务内加额，保留钱包上限校验（与 increaseUserQuota 语义一致）
+		r := tx.Model(&User{}).
+			Where("id = ? AND quota <= ?", userId, common.MaxWalletQuota-common.QuotaForInvitee).
+			Update("quota", gorm.Expr("quota + ?", common.QuotaForInvitee))
+		if r.Error != nil {
+			common.SysError("invitation invitee reward failed: " + r.Error.Error())
+		} else if r.RowsAffected != 1 {
+			common.SysError(common.LogText("invitation invitee reward skipped: user %d quota limit exceeded", userId))
+		} else {
+			gopool.Go(func() {
+				if err := cacheIncrUserQuota(userId, int64(common.QuotaForInvitee)); err != nil {
+					common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
+				}
+			})
+			recordRewardLog(tx, userId, user.Username, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
 		}
 	}
+	if common.QuotaForInviter > 0 {
+		if err := inviteUser(tx, user.InviterId); err != nil {
+			common.SysError("invitation inviter reward failed: " + err.Error())
+		} else {
+			var inviter User
+			if err := tx.Select("username").Where("id = ?", user.InviterId).First(&inviter).Error; err == nil {
+				recordRewardLog(tx, user.InviterId, inviter.Username, common.NewMessage("Bonus for inviting a user {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInviter)}))
+			}
+		}
+	}
+}
+
+// recordRewardLog 在充值事务内记录邀请奖励日志。
+// 日志库与主库同源（LOG_DB == DB，如 SQLite 或未配 LOG_SQL_DSN）时必须走 tx，
+// 跨连接写会 SQLITE_BUSY；独立日志库（MySQL/PG/ClickHouse）连接隔离，走全局 RecordLog。
+func recordRewardLog(tx *gorm.DB, userId int, username string, content *common.Message) {
+	if LOG_DB == DB {
+		other := NewLogOther()
+		log := &Log{
+			UserId:    userId,
+			Username:  username,
+			CreatedAt: common.GetTimestamp(),
+			Type:      LogTypeSystem,
+			Content:   other.setContent([]*common.Message{content}),
+			Other:     other.JSONString(),
+		}
+		if err := tx.Create(log).Error; err != nil {
+			common.SysLog(common.LogText("failed to record log: %s", err.Error()))
+		}
+		return
+	}
+	RecordLog(userId, LogTypeSystem, content)
 }
 
 func (user *User) Update(updatePassword bool) error {

@@ -104,6 +104,8 @@ func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[st
 		return result.Error
 	}
 	if result.RowsAffected == 1 {
+		// 充值入账成功后触发邀请奖励（幂等，只发一次；tx 传入保证同事务防 SQLite 锁冲突）
+		RewardInvitationOnFirstTopUp(tx, userId)
 		return nil
 	}
 

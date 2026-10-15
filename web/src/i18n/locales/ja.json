@@ -4925,6 +4925,8 @@
     "Quota given to invited users ({{formattedQuota}})": "招待されたユーザーに付与されるクォータ（{{formattedQuota}}）",
     "Quota given to users who invite others": "他のユーザーを招待したユーザーに付与されるクォータ",
     "Quota given to users who invite others ({{formattedQuota}})": "他のユーザーを招待したユーザーに付与されるクォータ（{{formattedQuota}}）",
+    "Reward amount in USD given to users who invite others": "招待したユーザーに付与される報酬額（米ドル）。被招待ユーザーの初回チャージ後に付与されます",
+    "Reward amount in USD given to invited users": "招待されたユーザーに付与される報酬額（米ドル）。初回チャージ後に付与されます",
     "Quota must be a positive number": "クォータは正の数である必要があります",
     "Quota must be zero or greater": "クォータは負の値にできません",
     "Redemption failed, please try again later": "引き換えに失敗しました。しばらくしてから再試行してください",

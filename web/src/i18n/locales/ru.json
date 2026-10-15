@@ -4925,6 +4925,8 @@
     "Quota given to invited users ({{formattedQuota}})": "Квота, предоставляемая приглашенным пользователям ({{formattedQuota}})",
     "Quota given to users who invite others": "Квота, предоставляемая пользователям, которые приглашают других",
     "Quota given to users who invite others ({{formattedQuota}})": "Квота, предоставляемая пользователям, которые приглашают других ({{formattedQuota}})",
+    "Reward amount in USD given to users who invite others": "Сумма вознаграждения в долларах США для пользователей, которые приглашают других",
+    "Reward amount in USD given to invited users": "Сумма вознаграждения в долларах США для приглашенных пользователей",
     "Quota must be a positive number": "Квота должна быть положительным числом",
     "Quota must be zero or greater": "Квота не может быть отрицательной",
     "Redemption failed, please try again later": "Не удалось активировать код, повторите попытку позже",

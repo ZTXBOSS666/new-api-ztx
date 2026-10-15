@@ -4969,6 +4969,8 @@
     "Quota given to invited users ({{formattedQuota}})": "授予被邀请用户的配额（{{formattedQuota}}）",
     "Quota given to users who invite others": "授予邀请其他用户的配额",
     "Quota given to users who invite others ({{formattedQuota}})": "授予邀请其他用户的配额（{{formattedQuota}}）",
+    "Reward amount in USD given to users who invite others": "授予邀请人的奖励金额（美元），被邀请人首次充值后发放",
+    "Reward amount in USD given to invited users": "授予被邀请人的奖励金额（美元），首次充值后发放",
     "Quota must be a positive number": "配额必须是正数",
     "Quota must be zero or greater": "额度不能为负数",
     "Redemption failed, please try again later": "兑换失败，请稍后重试",

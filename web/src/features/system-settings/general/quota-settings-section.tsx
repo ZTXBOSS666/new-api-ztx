@@ -82,11 +82,13 @@ function formatQuotaInputValue(value: QuotaInputValue): string {
 type QuotaSettingsSectionProps = {
   defaultValues: QuotaFormValues
   complianceConfirmed?: boolean
+  quotaPerUnit?: number
 }
 
 export function QuotaSettingsSection({
   defaultValues,
   complianceConfirmed = true,
+  quotaPerUnit = 500000,
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -106,10 +108,19 @@ export function QuotaSettingsSection({
       >,
       defaultValues,
       onSubmit: async (_data, changedFields) => {
+        // 战天下注：邀请奖励输入框是美元单位，存库前乘回 QuotaPerUnit 变成 quota 整数
+        const invitationKeys = new Set(['QuotaForInviter', 'QuotaForInvitee'])
         for (const [key, value] of Object.entries(changedFields)) {
+          let submitValue: string | number | boolean = value as
+            | string
+            | number
+            | boolean
+          if (invitationKeys.has(key) && typeof value === 'number') {
+            submitValue = Math.round(value * quotaPerUnit)
+          }
           await updateOption.mutateAsync({
             key,
-            value: value as string | number | boolean,
+            value: submitValue,
           })
         }
       },
@@ -233,6 +244,8 @@ export function QuotaSettingsSection({
                   <FormControl>
                     <Input
                       type='number'
+                      min={0}
+                      step='any'
                       value={field.value ?? ''}
                       onChange={handleNumberChange(field.onChange)}
                       name={field.name}
@@ -241,12 +254,7 @@ export function QuotaSettingsSection({
                     />
                   </FormControl>
                   <FormDescription>
-                    {t(
-                      'Quota given to users who invite others ({{formattedQuota}})',
-                      {
-                        formattedQuota: formatQuotaInputValue(field.value),
-                      }
-                    )}
+                    {t('Reward amount in USD given to users who invite others')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -262,6 +270,8 @@ export function QuotaSettingsSection({
                   <FormControl>
                     <Input
                       type='number'
+                      min={0}
+                      step='any'
                       value={field.value ?? ''}
                       onChange={handleNumberChange(field.onChange)}
                       name={field.name}
@@ -270,9 +280,7 @@ export function QuotaSettingsSection({
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Quota given to invited users ({{formattedQuota}})', {
-                      formattedQuota: formatQuotaInputValue(field.value),
-                    })}
+                    {t('Reward amount in USD given to invited users')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
