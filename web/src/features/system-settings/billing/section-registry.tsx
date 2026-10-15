@@ -57,33 +57,28 @@ const BILLING_SECTIONS = [
   {
     id: 'quota',
     titleKey: 'Quota Settings',
-    build: (settings: BillingSettings) => {
-      // 战天下注：邀请奖励字段前端按美元展示，这里把后端原始 quota 除以 QuotaPerUnit 换算
-      const quotaPerUnit =
-        settings.QuotaPerUnit > 0 ? settings.QuotaPerUnit : 500000
-      return (
-        <QuotaSettingsSection
-          quotaPerUnit={quotaPerUnit}
-          defaultValues={{
-            QuotaForNewUser: settings.QuotaForNewUser,
-            QuotaForInviter: settings.QuotaForInviter / quotaPerUnit,
-            QuotaForInvitee: settings.QuotaForInvitee / quotaPerUnit,
-            TopUpLink: settings.TopUpLink,
-            quota_setting: {
-              trust_quota_usd: settings['quota_setting.trust_quota_usd'],
-              pre_consume_multiplier:
-                settings['quota_setting.pre_consume_multiplier'],
-              enable_free_model_pre_consume:
-                settings['quota_setting.enable_free_model_pre_consume'],
-            },
-          }}
-          complianceConfirmed={
-            (settings['payment_setting.compliance_confirmed'] ?? false) &&
-            settings['payment_setting.compliance_terms_version'] === 'v1'
-          }
-        />
-      )
-    },
+    // 战天下注：邀请奖励的货币换算在 QuotaSettingsSection 内部完成（跟随货币显示配置）
+    build: (settings: BillingSettings) => (
+      <QuotaSettingsSection
+        defaultValues={{
+          QuotaForNewUser: settings.QuotaForNewUser,
+          QuotaForInviter: settings.QuotaForInviter,
+          QuotaForInvitee: settings.QuotaForInvitee,
+          TopUpLink: settings.TopUpLink,
+          quota_setting: {
+            trust_quota_usd: settings['quota_setting.trust_quota_usd'],
+            pre_consume_multiplier:
+              settings['quota_setting.pre_consume_multiplier'],
+            enable_free_model_pre_consume:
+              settings['quota_setting.enable_free_model_pre_consume'],
+          },
+        }}
+        complianceConfirmed={
+          (settings['payment_setting.compliance_confirmed'] ?? false) &&
+          settings['payment_setting.compliance_terms_version'] === 'v1'
+        }
+      />
+    ),
   },
   {
     id: 'currency',

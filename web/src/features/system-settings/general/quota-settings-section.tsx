@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota } from '@/lib/format'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
@@ -82,16 +83,26 @@ function formatQuotaInputValue(value: QuotaInputValue): string {
 type QuotaSettingsSectionProps = {
   defaultValues: QuotaFormValues
   complianceConfirmed?: boolean
-  quotaPerUnit?: number
 }
 
 export function QuotaSettingsSection({
   defaultValues,
   complianceConfirmed = true,
-  quotaPerUnit = 500000,
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  // 战天下注：邀请奖励输入按后台配置的货币显示单位换算（USD/CNY/自定义货币），
+  // 代币显示模式回退按 USD（与 formatBillingCurrencyFromUSD 语义一致）。
+  // 表单值 = 货币显示额度；存库值 = quota 整数。
+  const { config: currencyConfig, meta: currencyMeta } = getCurrencyDisplay()
+  const rewardCurrencyLabel =
+    currencyMeta.kind === 'tokens' ? 'USD' : getCurrencyLabel()
+  const rewardRate =
+    currencyMeta.kind === 'tokens' ? 1 : currencyMeta.exchangeRate
+  const quotaToRewardAmount = (quota: number) =>
+    (quota / currencyConfig.quotaPerUnit) * rewardRate
+  const rewardAmountToQuota = (amount: number) =>
+    Math.round((amount / rewardRate) * currencyConfig.quotaPerUnit)
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -106,9 +117,14 @@ export function QuotaSettingsSection({
         unknown,
         QuotaFormValues
       >,
-      defaultValues,
+      defaultValues: {
+        ...defaultValues,
+        QuotaForInviter: quotaToRewardAmount(defaultValues.QuotaForInviter),
+        QuotaForInvitee: quotaToRewardAmount(defaultValues.QuotaForInvitee),
+      },
       onSubmit: async (_data, changedFields) => {
-        // 战天下注：邀请奖励输入框是美元单位，存库前乘回 QuotaPerUnit 变成 quota 整数
+        // 战天下注：邀请奖励输入框是货币单位（跟随货币显示配置），
+        // 存库前换算回 quota 整数
         const invitationKeys = new Set(['QuotaForInviter', 'QuotaForInvitee'])
         for (const [key, value] of Object.entries(changedFields)) {
           let submitValue: string | number | boolean = value as
@@ -116,7 +132,7 @@ export function QuotaSettingsSection({
             | number
             | boolean
           if (invitationKeys.has(key) && typeof value === 'number') {
-            submitValue = Math.round(value * quotaPerUnit)
+            submitValue = rewardAmountToQuota(value)
           }
           await updateOption.mutateAsync({
             key,
@@ -254,7 +270,12 @@ export function QuotaSettingsSection({
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Reward amount in USD given to users who invite others')}
+                    {t(
+                      'Reward amount in {{currency}} given to users who invite others',
+                      {
+                        currency: rewardCurrencyLabel,
+                      }
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -280,7 +301,9 @@ export function QuotaSettingsSection({
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('Reward amount in USD given to invited users')}
+                    {t('Reward amount in {{currency}} given to invited users', {
+                      currency: rewardCurrencyLabel,
+                    })}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
