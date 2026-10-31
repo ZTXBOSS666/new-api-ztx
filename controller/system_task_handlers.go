@@ -22,6 +22,11 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(lotterySettlementHandler{})
+	// 异常日志返费：手动「一键返费」入队的 log_refund 任务必须由这里注册的
+	// handler 执行。v1.0.7 曾把 handler 删掉只留独立定时器，导致手动任务入队后
+	// 无人认领、永远 pending（僵尸任务），第二次点击还会复用僵尸任务假报
+	//「已有返费任务在执行」。注册回来后手动与自动共用同一执行路径。
+	service.RegisterSystemTaskHandler(logRefundHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -181,4 +186,49 @@ func (lotterySettlementHandler) Run(ctx context.Context, task *model.SystemTask,
 		return
 	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, map[string]any{"settled": true}, nil)
+}
+
+// logRefundHandler 执行一次异常日志返费结算（手动「一键返费」与每日自动结算共用）。
+// 载荷指定目标日期（YYYY-MM-DD）；trigger 为 manual / auto，用于审计记录。
+// 手动入队的任务由 runner 认领执行；自动任务由独立调度器（StartLogRefundScheduler）
+// 创建任务行后同样交由 runner 统一执行，天然具备 lease 去重与失败重试。
+type logRefundHandler struct{}
+
+func (logRefundHandler) Type() string { return model.SystemTaskTypeLogRefund }
+
+// Enabled 为 true 时系统任务调度器会周期性自动创建任务。但自动结算的时机由独立
+// 调度器精确控制在每天 00:00:30，不走这里的 Interval 轮询，因此 Enabled 固定返回
+// false，避免调度器额外创建重复任务行。
+func (logRefundHandler) Enabled() bool { return false }
+
+func (logRefundHandler) Interval() time.Duration { return 5 * time.Minute }
+func (logRefundHandler) NewPayload() any {
+	return model.LogRefundPayload{Date: model.LogRefundPreviousDate(time.Now()), Trigger: "auto"}
+}
+
+func (logRefundHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	payload := model.LogRefundPayload{}
+	if err := task.DecodePayload(&payload); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	targetDate := payload.Date
+	if targetDate == "" {
+		targetDate = model.LogRefundPreviousDate(time.Now())
+	}
+	trigger := payload.Trigger
+	if trigger == "" {
+		trigger = "auto"
+	}
+	result, err := model.RefundAbnormalConsumeLogs(targetDate, time.Now(), trigger)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
+	// 自动任务成功后串起下一个漏结算日（多天补账无需等到第二天凌晨）。
+	// 手动任务不串链，由管理员自主决定；失败的任务同样不串，交给每日定时器重试。
+	if trigger == "auto" {
+		service.EnqueueNextLogRefundBackfill()
+	}
 }

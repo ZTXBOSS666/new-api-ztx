@@ -163,6 +163,20 @@ func LogRefundDateProcessed(targetDate string) (bool, error) {
 	return count > 0, nil
 }
 
+// LogRefundDateAttempted 判断该日期是否曾经尝试过自动结算（无论成败）。
+// EnqueueNextLogRefundBackfill 只串「从未尝试过」的日期：失败/截断过的留给每日
+// 00:00:30 定时器限频重试，防止确定性失败在分钟级形成快速重试死循环。
+func LogRefundDateAttempted(targetDate string) (bool, error) {
+	var count int64
+	err := DB.Model(&LogRefundRun{}).
+		Where("target_date = ? AND trigger = ?", targetDate, "auto").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // LogRefundTargetDate 返回北京时间下 now 当天的日期串。
 func LogRefundTargetDate(now time.Time) string {
 	return now.In(BeijingLocation()).Format("2006-01-02")
@@ -268,21 +282,25 @@ func RecordLogRefund(userId int, content string, quota int, targetDate string, l
 	}
 }
 
-// HasPendingLogRefundAutoRun 判断「刚结束的那一天」是否还需要自动返费。调度器用它
-// 做闸门：自动跑完当天就停；若上一轮达到扫描上限（truncated）或存在失败用户，则
-// 返回 true，调度器稍后会继续把剩余部分处理完。管理端手动触发的记录不参与判定。
+// HasPendingLogRefundAutoRun 判断「刚结束的那一天」是否还需要自动返费。
+// 保留给旧调用方的兼容封装；新代码直接用 HasPendingLogRefundAutoRunByDate。
 func HasPendingLogRefundAutoRun(now time.Time) bool {
-	target := LogRefundPreviousDate(now)
-	var latest LogRefundRun
-	err := DB.Where("target_date = ? AND trigger = ?", target, "auto").Order("id desc").First(&latest).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return true
-	}
+	return HasPendingLogRefundAutoRunByDate(LogRefundPreviousDate(now))
+}
+
+// HasPendingLogRefundAutoRunByDate 判断指定日期是否还需要自动返费：该日期没有任何
+// 完整完成的运行记录（未截断、无失败用户）即视为漏结算，需要补账。
+// 与管理端 LogRefundDateProcessed 同一语义：手动「一键返费」完整跑过的日期同样
+// 算已处理，调度器不会再入队空转；截断或有失败的记录不算完整，仍会补账重跑。
+// 幂等兜底：即便重复执行，log_refund_records 的唯一索引也保证不会多退。
+func HasPendingLogRefundAutoRunByDate(targetDate string) bool {
+	processed, err := LogRefundDateProcessed(targetDate)
 	if err != nil {
+		// DB 故障时保守跳过：下个调度周期（每天 00:30 扫描最近 7 天）还会重试
 		common.SysError("log refund scheduler: " + err.Error())
 		return false
 	}
-	return latest.Truncated || latest.FailedCount > 0
+	return !processed
 }
 
 func logRefundProcessedLogIds(targetDate string) (map[int]struct{}, error) {
