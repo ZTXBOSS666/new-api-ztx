@@ -101,6 +101,12 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 	return claudemessages.ResponseClaude2OpenAI(claudeResponse)
 }
 
+// ResponseClaude2OpenAIWithStructuredJSON 是 ResponseClaude2OpenAI 的结构化输出
+// 仿真版本：jsonToolName 非空时把仿真 tool_use 的输入还原成 JSON 文本内容。
+func ResponseClaude2OpenAIWithStructuredJSON(claudeResponse *dto.ClaudeResponse, jsonToolName string) *dto.OpenAITextResponse {
+	return claudemessages.ResponseClaude2OpenAIWithStructuredJSON(claudeResponse, jsonToolName)
+}
+
 func UsageFromClaudeAPIUsage(usage *dto.ClaudeUsage) *dto.Usage {
 	return claudemessages.UsageFromClaudeAPIUsage(usage)
 }

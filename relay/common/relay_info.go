@@ -223,6 +223,10 @@ type RelayInfo struct {
 	// responsesToolState is written by request conversion and read by the
 	// matching response conversion (see ResponsesToolState).
 	responsesToolState *convmeta.ResponsesToolState
+	// claudeJSONToolName is written by the OpenAI→Claude request conversion when
+	// json_schema structured output is emulated via a forced tool call, and is
+	// read by the Claude response conversion and billing (see ClaudeJSONToolName).
+	claudeJSONToolName string
 
 	conversionDiagnostics          []types.ConversionDiagnostic
 	conversionDiagnosticKeys       map[conversionDiagnosticKey]struct{}
@@ -939,6 +943,23 @@ func (info *RelayInfo) ResponsesToolState() *convmeta.ResponsesToolState {
 func (info *RelayInfo) SetResponsesToolState(state *convmeta.ResponsesToolState) {
 	if info != nil {
 		info.responsesToolState = state
+	}
+}
+
+// claudeJSONToolName 记录本次中转是否启用了 json_schema 结构化输出仿真：
+// 请求侧（OpenAI→Claude 转换）写入仿真工具名，响应侧与计费侧据此把仿真工具的
+// tool_use 还原为 JSON 文本并豁免工具调用计费。每次重试都会重新执行请求转换，
+// 因此该值不会跨渠道残留（与 responsesToolState 同一保障语义）。
+func (info *RelayInfo) ClaudeJSONToolName() string {
+	if info == nil {
+		return ""
+	}
+	return info.claudeJSONToolName
+}
+
+func (info *RelayInfo) SetClaudeJSONToolName(name string) {
+	if info != nil {
+		info.claudeJSONToolName = name
 	}
 }
 

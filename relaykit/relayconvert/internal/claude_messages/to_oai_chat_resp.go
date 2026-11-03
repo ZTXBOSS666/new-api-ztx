@@ -129,6 +129,11 @@ type ClaudeToChatStreamState struct {
 	toolIndexByContentBlock map[int]int
 	blockTypeByContentBlock map[int]string
 	nextToolIndex           int
+	// jsonToolName 非空表示 json_schema 结构化输出仿真激活：仿真 tool_use 块
+	// 改道为纯文本流（JSON 片段直接走 content delta），text 前导块被丢弃，
+	// stop_reason=tool_use 映射为 stop。
+	jsonToolName            string
+	jsonBlockByContentBlock map[int]bool
 }
 
 func NewClaudeToChatStreamState() *ClaudeToChatStreamState {
@@ -136,6 +141,15 @@ func NewClaudeToChatStreamState() *ClaudeToChatStreamState {
 		toolIndexByContentBlock: make(map[int]int),
 		blockTypeByContentBlock: make(map[int]string),
 	}
+}
+
+// SetStructuredJSONTool 记录 json_schema 仿真工具名；空名或重复调用是 no-op。
+func (s *ClaudeToChatStreamState) SetStructuredJSONTool(name string) {
+	if s == nil || name == "" || s.jsonToolName != "" {
+		return
+	}
+	s.jsonToolName = name
+	s.jsonBlockByContentBlock = make(map[int]bool)
 }
 
 func (s *ClaudeToChatStreamState) ConvertChunk(claudeResponse *dto.ClaudeResponse) (*dto.ChatCompletionsStreamResponse, error) {
@@ -173,6 +187,15 @@ func (s *ClaudeToChatStreamState) ConvertChunk(claudeResponse *dto.ClaudeRespons
 			}
 			break
 		}
+		// json_schema 仿真块：不进 tool_calls 通道，直接吞掉起始事件；
+		// JSON 正文由后续 input_json_delta 改道为文本 content delta 输出。
+		if s.jsonToolName != "" && claudeResponse.ContentBlock.Name == s.jsonToolName {
+			if s.jsonBlockByContentBlock == nil {
+				s.jsonBlockByContentBlock = make(map[int]bool)
+			}
+			s.jsonBlockByContentBlock[contentBlockIndex] = true
+			return nil, nil
+		}
 		toolIndex, exists := s.toolIndexByContentBlock[contentBlockIndex]
 		if !exists {
 			toolIndex = s.nextToolIndex
@@ -181,6 +204,11 @@ func (s *ClaudeToChatStreamState) ConvertChunk(claudeResponse *dto.ClaudeRespons
 		}
 		converted.Index = kitutil.GetPointer(toolIndex)
 	case "content_block_delta":
+		// 仿真激活时丢弃 text 前导块：强制 tool_choice 保证模型必然调用仿真工具，
+		// 此前出现的任何 text 都是 preamble，会污染严格 JSON 流；thinking 不受影响。
+		if s.jsonToolName != "" && claudeResponse.Delta != nil && claudeResponse.Delta.Type == "text_delta" {
+			return nil, nil
+		}
 		if claudeResponse.Delta == nil || claudeResponse.Delta.Type != "input_json_delta" {
 			break
 		}
@@ -191,6 +219,15 @@ func (s *ClaudeToChatStreamState) ConvertChunk(claudeResponse *dto.ClaudeRespons
 			return nil, fmt.Errorf("Claude tool-use stream delta is missing partial JSON")
 		}
 		contentBlockIndex := *claudeResponse.Index
+		// 仿真块的 JSON 片段改道为普通文本 delta（content 通道），与 OpenAI strict
+		// 的流式输出形态一致：客户端直接收到 JSON 字符流。
+		if s.jsonToolName != "" && s.jsonBlockByContentBlock[contentBlockIndex] {
+			converted.Delta = &dto.ClaudeMediaMessage{
+				Type: "text",
+				Text: claudeResponse.Delta.PartialJson,
+			}
+			break
+		}
 		toolIndex, exists := s.toolIndexByContentBlock[contentBlockIndex]
 		if !exists {
 			if isClaudeHostedToolStreamBlock(s.blockTypeByContentBlock[contentBlockIndex]) {
@@ -202,6 +239,18 @@ func (s *ClaudeToChatStreamState) ConvertChunk(claudeResponse *dto.ClaudeRespons
 	case "content_block_stop":
 		if claudeResponse.Index != nil {
 			delete(s.blockTypeByContentBlock, *claudeResponse.Index)
+			if s.jsonBlockByContentBlock != nil {
+				delete(s.jsonBlockByContentBlock, *claudeResponse.Index)
+			}
+		}
+	case "message_delta":
+		// 强制工具调用的 stop_reason=tool_use；结构化输出语义下这是一次普通回答，
+		// 客户端期望 finish_reason=stop。改写成 end_turn 走既有映射即可。
+		if s.jsonToolName != "" && claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil && *claudeResponse.Delta.StopReason == "tool_use" {
+			converted.Delta = &dto.ClaudeMediaMessage{
+				Type:       claudeResponse.Delta.Type,
+				StopReason: kitutil.GetPointer[string]("end_turn"),
+			}
 		}
 	}
 
@@ -218,6 +267,17 @@ func isClaudeHostedToolStreamBlock(blockType string) bool {
 }
 
 func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextResponse {
+	return responseClaude2OpenAI(claudeResponse, "")
+}
+
+// ResponseClaude2OpenAIWithStructuredJSON 在 json_schema 结构化输出仿真
+//（请求侧注入的强制工具）激活时，把仿真 tool_use 的输入原样还原成 JSON 文本内容，
+// 客户端拿到的是标准 OpenAI strict 行为：content=JSON、finish_reason=stop、无 tool_calls。
+func ResponseClaude2OpenAIWithStructuredJSON(claudeResponse *dto.ClaudeResponse, jsonToolName string) *dto.OpenAITextResponse {
+	return responseClaude2OpenAI(claudeResponse, jsonToolName)
+}
+
+func responseClaude2OpenAI(claudeResponse *dto.ClaudeResponse, jsonToolName string) *dto.OpenAITextResponse {
 	choices := make([]dto.OpenAITextResponseChoice, 0)
 	fullTextResponse := dto.OpenAITextResponse{
 		Id:      fmt.Sprintf("chatcmpl-%s", kitutil.GetUUID()),
@@ -236,10 +296,31 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 	thinkingContent := ""
 	annotations := make([]any, 0)
 
+	// 仿真激活时：预扫一遍确认模型确实按强制工具回了 tool_use。
+	// 确认后丢弃 text 前导块（OpenAI strict 语义下 content 只允许 JSON 本体），
+	// tool_use 输入成为全部内容；thinking 不受影响，仍走 reasoning_content。
+	hasJSONTool := false
+	if jsonToolName != "" {
+		for _, message := range claudeResponse.Content {
+			if message.Type == "tool_use" && message.Name == jsonToolName {
+				hasJSONTool = true
+				break
+			}
+		}
+	}
+
 	fullTextResponse.Id = claudeResponse.Id
 	for _, message := range claudeResponse.Content {
 		switch message.Type {
 		case "tool_use":
+			if hasJSONTool && message.Name == jsonToolName {
+				// 仿真工具的输入就是最终答案：紧凑 JSON 文本，与 OpenAI 输出形态一致。
+				args, _ := kitutil.Marshal(message.Input)
+				responseText.Reset()
+				responseTextOffset = 0
+				responseText.WriteString(string(args))
+				continue
+			}
 			args, _ := kitutil.Marshal(message.Input)
 			tools = append(tools, dto.ToolCallResponse{
 				ID:   message.Id,
@@ -254,6 +335,10 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 				thinkingContent = *message.Thinking
 			}
 		case "text":
+			if hasJSONTool {
+				// 丢弃 text 前导块，保证 content 是纯 JSON
+				continue
+			}
 			text := message.GetText()
 			offset := responseTextOffset
 			responseText.WriteString(text)
@@ -264,12 +349,18 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 			}
 		}
 	}
+	finishReason := StopReasonClaudeToOpenAI(claudeResponse.StopReason)
+	if hasJSONTool && finishReason == "tool_calls" {
+		// 强制工具的 stop_reason=tool_use 映射为 tool_calls；结构化输出语义下
+		// 这次调用就是普通回答，客户端期望 finish_reason=stop。
+		finishReason = "stop"
+	}
 	choice := dto.OpenAITextResponseChoice{
 		Index: 0,
 		Message: dto.Message{
 			Role: "assistant",
 		},
-		FinishReason: StopReasonClaudeToOpenAI(claudeResponse.StopReason),
+		FinishReason: finishReason,
 	}
 	choice.SetStringContent(responseText.String())
 	if encodedAnnotations, err := marshalChatAnnotations(annotations); err == nil && len(encodedAnnotations) > 0 {

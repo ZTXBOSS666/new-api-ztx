@@ -1123,13 +1123,13 @@ func finalizeOAIChatStreamResponseToGeminiChat(_ context.Context, info convmeta.
 	return streamValuesFromAny(responses), streamState.Usage(), nil
 }
 
-func convertClaudeMessagesResponseToOAIChat(_ context.Context, _ convmeta.Meta, response any) (any, *dto.Usage, error) {
+func convertClaudeMessagesResponseToOAIChat(_ context.Context, info convmeta.Meta, response any) (any, *dto.Usage, error) {
 	claudeResponse, err := asClaudeResponse(response)
 	if err != nil {
 		return nil, nil, err
 	}
 	usage := usageFromClaudeResponse(claudeResponse)
-	openAIResponse := ResponseClaude2OpenAI(claudeResponse)
+	openAIResponse := ResponseClaude2OpenAIWithStructuredJSON(claudeResponse, claudeJSONToolNameFromMeta(info))
 	if usage != nil {
 		openAIResponse.Usage = *usage
 	}
@@ -1153,7 +1153,7 @@ func newClaudeMessagesToOAIChatStreamState(_ ResponseStreamOptions) any {
 	return claudemessages.NewClaudeToChatStreamState()
 }
 
-func convertClaudeMessagesStreamResponseChunkToOAIChat(_ context.Context, _ convmeta.Meta, response any, state any) ([]any, *dto.Usage, error) {
+func convertClaudeMessagesStreamResponseChunkToOAIChat(_ context.Context, info convmeta.Meta, response any, state any) ([]any, *dto.Usage, error) {
 	claudeResponse, err := asClaudeResponse(response)
 	if err != nil {
 		return nil, nil, err
@@ -1162,6 +1162,8 @@ func convertClaudeMessagesStreamResponseChunkToOAIChat(_ context.Context, _ conv
 	if !ok || streamState == nil {
 		return nil, nil, errors.New("Claude-to-Chat stream state is required")
 	}
+	// json_schema 仿真工具名由请求转换写入 Meta；首个 chunk 前注入一次即可。
+	streamState.SetStructuredJSONTool(claudeJSONToolNameFromMeta(info))
 	openAIResponse, err := streamState.ConvertChunk(claudeResponse)
 	if err != nil {
 		return nil, nil, err
@@ -1171,6 +1173,15 @@ func convertClaudeMessagesStreamResponseChunkToOAIChat(_ context.Context, _ conv
 		openAIResponse.Usage = usage
 	}
 	return streamValuesFromAny(openAIResponse), usage, nil
+}
+
+// claudeJSONToolNameFromMeta 从 Meta（宿主 RelayInfo）读取 json_schema 仿真工具名；
+// 未知实现（如测试用的 Values）返回空串表示仿真未激活。
+func claudeJSONToolNameFromMeta(info convmeta.Meta) string {
+	if getter, ok := info.(interface{ ClaudeJSONToolName() string }); ok {
+		return getter.ClaudeJSONToolName()
+	}
+	return ""
 }
 
 func convertGeminiChatResponseToOAIChat(_ context.Context, info convmeta.Meta, response any) (any, *dto.Usage, error) {

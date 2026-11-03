@@ -43,6 +43,12 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 	return relayconvert.ResponseClaude2OpenAI(claudeResponse)
 }
 
+// ResponseClaude2OpenAIWithStructuredJSON 在 json_schema 结构化输出仿真激活时，
+// 把仿真 tool_use 的输入还原成 JSON 文本内容（详见 sharedclaude.StructuredJSONResponseToolName）。
+func ResponseClaude2OpenAIWithStructuredJSON(claudeResponse *dto.ClaudeResponse, jsonToolName string) *dto.OpenAITextResponse {
+	return relayconvert.ResponseClaude2OpenAIWithStructuredJSON(claudeResponse, jsonToolName)
+}
+
 type ClaudeResponseInfo = relayconvert.ClaudeResponseInfo
 
 func cacheCreationTokensForOpenAIUsage(usage *dto.Usage) int {
@@ -243,6 +249,11 @@ func countClaudeStreamBillableTools(info *relaycommon.RelayInfo, claudeResponse 
 func countClaudeContentBlockTools(info *relaycommon.RelayInfo, block *dto.ClaudeMediaMessage) {
 	switch block.Type {
 	case "tool_use":
+		// json_schema 仿真工具不是真正的工具调用，豁免按次计费——否则客户每用一次
+		// 结构化输出就多扣一次工具调用费（信息注入的强制工具不该让客户买单）。
+		if info.ClaudeJSONToolName() != "" && block.Name == info.ClaudeJSONToolName() {
+			return
+		}
 		info.CountBillableToolCall(dto.BuildInCallToolUse, block.Name)
 	case "web_search_tool_result":
 		if _, delivered := block.Content.([]any); delivered && info.WebSearchBillingKey != "" {
@@ -386,7 +397,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	var responseData []byte
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
-		openaiResponse := ResponseClaude2OpenAI(&claudeResponse)
+		openaiResponse := ResponseClaude2OpenAIWithStructuredJSON(&claudeResponse, info.ClaudeJSONToolName())
 		openaiResponse.Usage = buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
 		responseData, err = common.Marshal(openaiResponse)
 		if err != nil {

@@ -67,6 +67,55 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		claudeTools = append(claudeTools, &webSearchTool)
 	}
 
+	// OpenAI 的 json_schema / json_object 结构化输出在 Claude Messages 协议里没有
+	// 原生对应物——直接丢弃 response_format 会导致模型自由发挥字段名并把 JSON 包进
+	// markdown 代码块（客户实测踩坑）。这里把 json_schema 编译成一个强制调用的工具：
+	// tool_choice=tool 保证模型只能按 input_schema 填 tool_use，响应侧再把该 tool_use
+	// 的输入原样还原成 JSON 文本，客户端看到的行为与 OpenAI strict 一致。
+	// json_object 没有 schema，只能退化为系统提示注入（尽力约束，非严格保证）。
+	jsonToolName := ""
+	needsJSONInstruction := false
+	if textRequest.ResponseFormat != nil {
+		switch textRequest.ResponseFormat.Type {
+		case "json_schema":
+			if len(textRequest.ResponseFormat.JsonSchema) > 0 {
+				jsonSchema := dto.FormatJsonSchema{}
+				if err := kitutil.Unmarshal(textRequest.ResponseFormat.JsonSchema, &jsonSchema); err != nil {
+					needsJSONInstruction = true
+				} else if claudeHasToolNamed(claudeTools, sharedclaude.StructuredJSONResponseToolName) {
+					// 客户自己的工具恰好撞名，放弃仿真避免行为冲突，退化为提示注入。
+					needsJSONInstruction = true
+				} else if schemaRaw, err := kitutil.Marshal(jsonSchema.Schema); err == nil {
+					if inputSchema, ok := sharedclaude.FunctionParametersToInputSchema(schemaRaw); ok {
+						tool := &dto.Tool{
+							Name:        sharedclaude.StructuredJSONResponseToolName,
+							Description: sharedclaude.StructuredJSONResponseToolDescription,
+							InputSchema: inputSchema,
+						}
+						if description := strings.TrimSpace(jsonSchema.Description); description != "" {
+							tool.Description = description
+						}
+						if len(jsonSchema.Strict) > 0 {
+							var strict bool
+							if err := kitutil.Unmarshal(jsonSchema.Strict, &strict); err == nil && strict {
+								tool.Strict = &strict
+							}
+						}
+						claudeTools = append(claudeTools, tool)
+						jsonToolName = sharedclaude.StructuredJSONResponseToolName
+					}
+				}
+			} else {
+				needsJSONInstruction = true
+			}
+		case "json_object":
+			needsJSONInstruction = true
+		}
+	}
+	if setter, ok := info.(interface{ SetClaudeJSONToolName(string) }); ok {
+		setter.SetClaudeJSONToolName(jsonToolName)
+	}
+
 	claudeRequest := dto.ClaudeRequest{
 		Model:         textRequest.Model,
 		StopSequences: nil,
@@ -90,7 +139,16 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		claudeRequest.Stream = kitutil.GetPointer(true)
 	}
 
-	if textRequest.ToolChoice != nil || textRequest.ParallelTooCalls != nil {
+	// json_schema 仿真工具强制指定：结构化输出契约优先于用户自带的 tool_choice
+	//（OpenAI 语义下 strict json_schema 与 tool_choice=auto 并存时，最终答案仍必须是
+	// 符合 schema 的 JSON；Claude 强制工具是能保证这一点的唯一手段）。
+	if jsonToolName != "" {
+		claudeRequest.ToolChoice = &dto.ClaudeToolChoice{
+			Type:                   "tool",
+			Name:                   jsonToolName,
+			DisableParallelToolUse: true,
+		}
+	} else if textRequest.ToolChoice != nil || textRequest.ParallelTooCalls != nil {
 		claudeToolChoice := sharedclaude.MapOpenAIToolChoice(textRequest.ToolChoice, textRequest.ParallelTooCalls)
 		if claudeToolChoice != nil {
 			claudeRequest.ToolChoice = claudeToolChoice
@@ -334,6 +392,19 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		claudeRequest.System = systemMessages
 	}
 
+	// json_object（或 json_schema 仿真失败）的提示注入：放在最后保持最高指令权重。
+	if needsJSONInstruction {
+		if claudeRequest.System == nil {
+			claudeRequest.System = []dto.ClaudeMediaMessage{}
+		}
+		if systemBlocks, ok := claudeRequest.System.([]dto.ClaudeMediaMessage); ok {
+			claudeRequest.System = append(systemBlocks, dto.ClaudeMediaMessage{
+				Type: "text",
+				Text: kitutil.GetPointer[string](sharedclaude.JSONObjectSystemInstruction),
+			})
+		}
+	}
+
 	claudeRequest.Prompt = ""
 	claudeRequest.Messages = claudeMessages
 	// Checked last so every injection path (default hook, thinking adapter
@@ -342,6 +413,16 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		return nil, sharedclaude.ErrMissingMaxTokens
 	}
 	return &claudeRequest, nil
+}
+
+// claudeHasToolNamed 判断已转换的工具列表里是否已有同名工具（防仿真工具撞名）。
+func claudeHasToolNamed(claudeTools []any, name string) bool {
+	for _, tool := range claudeTools {
+		if t, ok := tool.(*dto.Tool); ok && t.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func parseClaudeStopSequences(stop any) []string {
