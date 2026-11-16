@@ -815,13 +815,17 @@ func RewardInvitationOnFirstTopUp(tx *gorm.DB, userId int) {
 		if r.Error != nil {
 			common.SysError("invitation invitee reward failed: " + r.Error.Error())
 		} else if r.RowsAffected != 1 {
+			// 余额已经顶到钱包上限，这笔奖励发不出去。invitation_rewarded 已经置位，
+			// 本笔不会再重试——必须写一条用户可见的记录，别让额度无声蒸发。
 			common.SysError(common.LogText("invitation invitee reward skipped: user %d quota limit exceeded", userId))
+			recordRewardLog(tx, userId, user.Username, common.NewMessage("Invitation code bonus not credited: wallet quota limit reached", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
 		} else {
-			gopool.Go(func() {
-				if err := cacheIncrUserQuota(userId, int64(common.QuotaForInvitee)); err != nil {
-					common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
-				}
-			})
+			// 同步刷新缓存而不是异步 goroutine：异步在事务提交前可能还没跑，用户
+			// 充值后余额会短暂不可用；同步至少保证「事务提交成功 ⇒ 缓存已加」。
+			// 事务若回滚，缓存虚高会由缓存过期/下次读库水合自愈。
+			if err := cacheIncrUserQuota(userId, int64(common.QuotaForInvitee)); err != nil {
+				common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
+			}
 			recordRewardLog(tx, userId, user.Username, common.NewMessage("Invitation code bonus {{quota}}", map[string]any{"quota": logger.FormatQuota(common.QuotaForInvitee)}))
 		}
 	}
