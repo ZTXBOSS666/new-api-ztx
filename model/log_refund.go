@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,11 +27,9 @@ import (
 //  2. 管理端「一键返费」：立即对指定日期执行一次。
 const (
 	LogRefundConfigID = 1
-	// logRefundBatchSize 每批扫描的日志条数。
+	// logRefundBatchSize 每批扫描的日志条数。流式处理下内存只与批大小相关，
+	// 单日日志再多也不会把内存打爆。
 	logRefundBatchSize = 500
-	// maxLogRefundScanRows 单次运行最多扫描的候选行数：防御性上限，避免异常数据把
-	// 内存打爆。触及上限时标记 truncated，调度器稍后会继续处理剩余部分。
-	maxLogRefundScanRows = 200000
 )
 
 var (
@@ -204,15 +203,23 @@ func logRefundDayRange(targetDate string) (int64, int64, error) {
 	return start, start + 86400, nil
 }
 
-// isAbnormalLogCandidate 判定一条消费日志是否属于「异常返费」范围：必须确实扣了费
-// （quota > 0），并且满足下面任一条件：
+// isAbnormalLogCandidate 判定一条消费日志是否属于「异常返费」范围：必须确实扣了
+// 费（quota > 0），并且满足下面任一条件：
 //  1. 空返回：补全 token 为 0，钱花了但一点输出都没拿到；
 //  2. 流状态异常：流以错误结束，且输入/输出 token 不完整（任一为 0）。
 //
 // 注意：流状态异常但输入、输出 token 都正常非 0 时，说明内容已经正常产出，不算白扣，
 // 不参与返费。
+//
+// 门槛先行：只有文本对话类入口才存在「成功但输出为空」的白扣场景。embedding、
+// rerank、图片、TTS 这类请求天生没有 completion tokens，Quota > 0 是正常计费，
+// 一旦被当成空返回退款，等于每天凌晨给全站用户无条件送钱。request_path 缺失的
+// 老日志一律不判异常：少退只是账务瑕疵，乱退是资金事故。
 func isAbnormalLogCandidate(log *Log) bool {
 	if log == nil || log.Quota <= 0 {
+		return false
+	}
+	if !isTextChatRequestPath(gjson.Get(log.Other, "request_path").String()) {
 		return false
 	}
 	// 条件 1：空返回
@@ -230,6 +237,28 @@ func isAbnormalLogCandidate(log *Log) bool {
 		return false
 	}
 	return true
+}
+
+// textChatPathPrefixes 是可以出现「没拿到输出却扣了钱」的入口白名单。
+// 新接入协议时记得同步这里，否则该协议的异常请求不会被自动返费（宁可少退）。
+var textChatPathPrefixes = []string{
+	"/v1/chat/completions",
+	"/v1/completions",
+	"/v1/responses",
+	"/v1/messages",
+	"/v1beta/models/",
+}
+
+func isTextChatRequestPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, prefix := range textChatPathPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // logRefundAmountText 按站点「额度展示」设置渲染退款金额：USD/CNY/自定义货币走
@@ -303,69 +332,28 @@ func HasPendingLogRefundAutoRunByDate(targetDate string) bool {
 	return !processed
 }
 
-func logRefundProcessedLogIds(targetDate string) (map[int]struct{}, error) {
-	var ids []int
-	if err := DB.Model(&LogRefundRecord{}).Where("refund_date = ?", targetDate).Pluck("log_id", &ids).Error; err != nil {
-		return nil, err
-	}
-	processed := make(map[int]struct{}, len(ids))
-	for _, id := range ids {
-		processed[id] = struct{}{}
-	}
-	return processed, nil
-}
-
-// collectLogRefundCandidates 分批扫描目标日期的消费日志，交给 Go 侧做精确判定，
-// 避免在 SQL 里解析 JSON（三种数据库的 JSON 能力不一致）。
-// 第二个返回值表示本次是否因达到扫描上限而被截断。
-func collectLogRefundCandidates(targetDate string) (map[int][]logRefundCandidate, bool, error) {
+// scanAbnormalLogCandidates 用 keyset 游标扫描目标日期里 id > afterId 的候选日志。
+//
+// 不用 OFFSET：大 offset 在三种数据库上都会退化成全表扫描，更致命的是旧实现一旦
+// 达到扫描上限，下次运行仍然从 0 开始，永远翻不到尾部——超出上限的日志会被永久
+// 饿死，账也永远退不出去。游标推进保证每一轮都必然向前；重复处理由
+// log_refund_records 的唯一索引做幂等兜底，不会多退。
+func scanAbnormalLogCandidates(targetDate string, afterId int) ([]Log, error) {
 	start, end, err := logRefundDayRange(targetDate)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	processed, err := logRefundProcessedLogIds(targetDate)
-	if err != nil {
-		return nil, false, err
+	var logs []Log
+	// 消费日志在 LOG_DB（可能与主库分离，也支持 ClickHouse），必须走 LOG_DB 查询。
+	if err := LOG_DB.Model(&Log{}).
+		Where("type = ? AND created_at >= ? AND created_at < ? AND quota > ? AND (completion_tokens <= ? OR is_stream = ?) AND id > ?",
+			LogTypeConsume, start, end, 0, 0, true, afterId).
+		Order("id asc").
+		Limit(logRefundBatchSize).
+		Find(&logs).Error; err != nil {
+		return nil, err
 	}
-
-	perUser := make(map[int][]logRefundCandidate)
-	scanned := 0
-	truncated := false
-	for offset := 0; ; offset += logRefundBatchSize {
-		var logs []Log
-		// 消费日志在 LOG_DB（可能与主库分离，也支持 ClickHouse），必须走 LOG_DB 查询。
-		if err := LOG_DB.Model(&Log{}).
-			Where("type = ? AND created_at >= ? AND created_at < ? AND quota > ? AND (completion_tokens <= ? OR is_stream = ?)",
-				LogTypeConsume, start, end, 0, 0, true).
-			Order("id asc").
-			Limit(logRefundBatchSize).
-			Offset(offset).
-			Find(&logs).Error; err != nil {
-			return nil, false, err
-		}
-		if len(logs) == 0 {
-			break
-		}
-		scanned += len(logs)
-		for i := range logs {
-			log := &logs[i]
-			if _, done := processed[log.Id]; done {
-				continue
-			}
-			if !isAbnormalLogCandidate(log) {
-				continue
-			}
-			perUser[log.UserId] = append(perUser[log.UserId], logRefundCandidate{LogId: log.Id, Quota: log.Quota})
-		}
-		if len(logs) < logRefundBatchSize {
-			break
-		}
-		if scanned >= maxLogRefundScanRows {
-			truncated = true
-			break
-		}
-	}
-	return perUser, truncated, nil
+	return logs, nil
 }
 
 // refundUserAbnormalLogs 在单个事务里为用户登记幂等记录并退还额度。
@@ -416,31 +404,53 @@ func refundUserAbnormalLogs(userId int, targetDate string, candidates []logRefun
 // RefundAbnormalConsumeLogs 执行一次异常返费：扫描 targetDate（北京时间自然日）内的
 // 消费日志，按用户汇总退还额度，并为每个用户写一条汇总日志。
 // trigger 仅用于审计记录（auto / manual）。
+//
+// 流式处理：每批扫出来就立刻按用户结算，内存恒定且游标必然推进。数据量大的日子，
+// 同一用户可能因为跨批拿到多条汇总日志——账一条都不会漏，可读性无伤。
 func RefundAbnormalConsumeLogs(targetDate string, now time.Time, trigger string) (*LogRefundResult, error) {
 	if err := ValidateLogRefundTargetDate(targetDate); err != nil {
 		return nil, err
 	}
-	perUser, truncated, err := collectLogRefundCandidates(targetDate)
-	if err != nil {
-		return nil, err
-	}
 
-	result := &LogRefundResult{TargetDate: targetDate, Truncated: truncated}
-	for userId, candidates := range perUser {
-		refundedQuota, refundedCount, err := refundUserAbnormalLogs(userId, targetDate, candidates, now)
+	result := &LogRefundResult{TargetDate: targetDate}
+	afterId := 0
+	for {
+		logs, err := scanAbnormalLogCandidates(targetDate, afterId)
 		if err != nil {
-			common.SysError(fmt.Sprintf("log refund failed: user=%d date=%s err=%v", userId, targetDate, err))
-			result.FailedCount++
-			continue
+			return nil, err
 		}
-		if refundedQuota <= 0 {
-			continue
+		if len(logs) == 0 {
+			break
 		}
-		syncCreditUserQuotaCache(userId, refundedQuota, "log refund")
-		RecordLogRefund(userId, "今日异常返费 "+logRefundAmountText(refundedQuota), refundedQuota, targetDate, refundedCount)
-		result.LogCount += refundedCount
-		result.UserCount++
-		result.RefundedQuota += refundedQuota
+		afterId = logs[len(logs)-1].Id
+
+		perUser := make(map[int][]logRefundCandidate)
+		for i := range logs {
+			log := &logs[i]
+			if !isAbnormalLogCandidate(log) {
+				continue
+			}
+			perUser[log.UserId] = append(perUser[log.UserId], logRefundCandidate{LogId: log.Id, Quota: log.Quota})
+		}
+		for userId, candidates := range perUser {
+			refundedQuota, refundedCount, err := refundUserAbnormalLogs(userId, targetDate, candidates, now)
+			if err != nil {
+				common.SysError(fmt.Sprintf("log refund failed: user=%d date=%s err=%v", userId, targetDate, err))
+				result.FailedCount++
+				continue
+			}
+			if refundedQuota <= 0 {
+				continue
+			}
+			syncCreditUserQuotaCache(userId, refundedQuota, "log refund")
+			RecordLogRefund(userId, "今日异常返费 "+logRefundAmountText(refundedQuota), refundedQuota, targetDate, refundedCount)
+			result.LogCount += refundedCount
+			result.UserCount++
+			result.RefundedQuota += refundedQuota
+		}
+		if len(logs) < logRefundBatchSize {
+			break
+		}
 	}
 
 	if trigger == "" {

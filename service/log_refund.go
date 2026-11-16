@@ -36,16 +36,18 @@ func StartLogRefundScheduler() {
 			return
 		}
 		go func() {
-			// defer recover：goroutine panic 会让整个进程内的定时器永久死亡
-			//（外层 for 循环挂掉），之后每天凌晨都不会再结算。包一层 recover，
-			// 打日志后继续等下一个凌晨，结算本身有幂等保障，重复跑不会多退。
-			defer func() {
-				if r := recover(); r != nil {
-					common.SysError(fmt.Sprintf("log refund scheduler panicked: %v", r))
-				}
-			}()
 			for {
-				runLogRefundAutoSettlement()
+				// recover 必须包在单次迭代内部。写在 goroutine 最外层时，panic 之后
+				// defer 一跑函数就返回，外层 for 根本活不到下一轮——注释里担心的
+				// "定时器永久死亡"恰恰会发生在自己身上。结算有幂等保障，重跑不会多退。
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							common.SysError(fmt.Sprintf("log refund scheduler panicked: %v", r))
+						}
+					}()
+					runLogRefundAutoSettlement()
+				}()
 				now := time.Now().In(model.BeijingLocation())
 				next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 30, 0, model.BeijingLocation())
 				timer := time.NewTimer(time.Until(next))
@@ -108,7 +110,7 @@ func logRefundBackfillDates(config *model.LogRefundConfig, now time.Time) []stri
 
 // EnqueueNextLogRefundBackfill 一张自动结算任务完成后，把窗口内下一个「从未尝试过」
 // 的漏结算日期串起来入队，多个漏结算日无需等到第二天凌晨，几分钟内就能逐天补完
-//（runner 空闲轮询 15 秒一张）。只串从未尝试过的日期：失败/截断过的日期留给每日
+// （runner 空闲轮询 15 秒一张）。只串从未尝试过的日期：失败/截断过的日期留给每日
 // 00:00:30 的定时器重试（天然限频一天一次），避免确定性失败（如钱包上限）在分钟级
 // 形成快速重试死循环。管理端手动触发的任务不串链，由管理员自主决定。
 func EnqueueNextLogRefundBackfill() {

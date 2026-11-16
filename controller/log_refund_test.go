@@ -45,8 +45,12 @@ func logRefundTestDB(t *testing.T) *gorm.DB {
 }
 
 // logRefundAbnormalLog 构造一条命中返费判定的消费日志：扣费>0 且补全 token=0（空返回）。
+// 真实消费日志由 service.appendRequestPath 写入 request_path，返费判定只认文本对话
+// 入口，所以这里必须还原该字段，否则测的不是线上形状。
 func logRefundAbnormalLog(t *testing.T, db *gorm.DB, userId int, quota int, createdAt int64, id int) model.Log {
 	t.Helper()
+	other := model.NewLogOther()
+	other.SetPublic("request_path", "/v1/chat/completions")
 	log := model.Log{
 		Id:               id,
 		UserId:           userId,
@@ -57,6 +61,7 @@ func logRefundAbnormalLog(t *testing.T, db *gorm.DB, userId int, quota int, crea
 		Quota:            quota,
 		CompletionTokens: 0, // 空返回 → 命中条件1
 		IsStream:         false,
+		Other:            other.JSONString(),
 	}
 	require.NoError(t, db.Create(&log).Error)
 	return log
@@ -204,4 +209,39 @@ func TestLogRefundSchedulerDisabledViaMiddleware(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/abnormal-refund/admin", nil)
 	middleware.AdminAuth()(c)
 	assert.Equal(t, http.StatusUnauthorized, c.Writer.Status(), "未登录必须被拦截")
+}
+
+// TestLogRefundSkipsNonTextRequests 守住资金安全底线：embedding / rerank 这类请求
+// 天生没有 completion tokens，Quota>0 是正常计费。返费判定必须只认文本对话入口，
+// 否则每天凌晨会把这类合法扣费全额退回去，等于给全站用户发钱。
+func TestLogRefundSkipsNonTextRequests(t *testing.T) {
+	db := logRefundTestDB(t)
+	yesterday := time.Now().In(model.BeijingLocation()).AddDate(0, 0, -1)
+	targetDate := yesterday.Format("2006-01-02")
+	startOfDay := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, model.BeijingLocation()).Unix()
+
+	// 正常的 embedding 消费日志：路径不在文本对话白名单内，completion_tokens=0。
+	other := model.NewLogOther()
+	other.SetPublic("request_path", "/v1/embeddings")
+	require.NoError(t, db.Create(&model.Log{
+		Id:               1,
+		UserId:           60,
+		Username:         "user60",
+		CreatedAt:        startOfDay + 100,
+		Type:             model.LogTypeConsume,
+		Content:          "embedding consume",
+		Quota:            1000,
+		CompletionTokens: 0,
+		IsStream:         false,
+		Other:            other.JSONString(),
+	}).Error)
+	require.NoError(t, db.Create(&model.User{Id: 60, Username: "user60", Quota: 0, Status: 1}).Error)
+
+	result, err := model.RefundAbnormalConsumeLogs(targetDate, time.Now(), "manual")
+	require.NoError(t, err)
+	assert.Zero(t, result.RefundedQuota, "embedding 的合法扣费一分都不能退")
+
+	var user model.User
+	require.NoError(t, db.First(&user, 60).Error)
+	assert.Zero(t, user.Quota)
 }

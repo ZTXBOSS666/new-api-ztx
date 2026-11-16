@@ -189,9 +189,11 @@ func SetApiRouter(router *gin.Engine) {
 		logRefundAdminRoute := apiRouter.Group("/abnormal-refund/admin")
 		logRefundAdminRoute.Use(middleware.AdminAuth(), middleware.DisableCache())
 		{
-			logRefundAdminRoute.GET("", controller.GetLogRefundAdmin)
-			logRefundAdminRoute.PUT("", controller.UpdateLogRefundAdmin)
-			logRefundAdminRoute.POST("/run", middleware.CriticalRateLimit(), controller.RunLogRefundAdmin)
+			// 一键返费是真金白银的操作，权限粒度必须和抽奖一致：只有拿到
+			// log_refund.manage 的角色才能触发，普通管理员不能随手给任意日期退款。
+			logRefundAdminRoute.GET("", middleware.RequirePermission(authz.LogRefundRead), controller.GetLogRefundAdmin)
+			logRefundAdminRoute.PUT("", middleware.RequirePermission(authz.LogRefundManage), controller.UpdateLogRefundAdmin)
+			logRefundAdminRoute.POST("/run", middleware.RequirePermission(authz.LogRefundManage), middleware.CriticalRateLimit(), controller.RunLogRefundAdmin)
 		}
 
 		// Subscription billing (plans, purchase, admin management)
