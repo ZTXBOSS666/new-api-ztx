@@ -214,7 +214,10 @@ func TestLotteryConcurrentEntryCannotOverfill(t *testing.T) {
 	assert.Equal(t, 19, quotaSum, "only the successful entry pays the fee")
 }
 
-func TestLotteryCreditFailureRollsBackWinnerAndRound(t *testing.T) {
+// TestLotteryCreditFailureSkipsWinnerAndSettlesRound 验证单个中奖者入账失败（余额顶到
+// 钱包上限）时的正确行为：跳过该用户、撤销其未入账的中奖记录，本轮照常结算。
+// 旧实现整轮回滚，而 JoinLottery 会拒绝「上一轮未结算」的报名，整套抽奖被永久焊死。
+func TestLotteryCreditFailureSkipsWinnerAndSettlesRound(t *testing.T) {
 	db := lotteryTestDB(t)
 	now := lotteryTime()
 	lotteryUser(t, db, 1, "rollback")
@@ -223,18 +226,26 @@ func TestLotteryCreditFailureRollsBackWinnerAndRound(t *testing.T) {
 	_, err = model.JoinLottery(1, now)
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 1).Update("quota", common.MaxWalletQuota).Error)
-	assert.ErrorIs(t, model.SettleDueLotteryRounds(now.Add(time.Second)), model.ErrWalletQuotaLimitExceeded)
+
+	// 不能返回错误，也不能整轮回滚：本轮必须落地结算。
+	require.NoError(t, model.SettleDueLotteryRounds(now.Add(time.Second)))
+
 	var count int64
 	require.NoError(t, db.Model(&model.LotteryWinner{}).Count(&count).Error)
-	assert.Zero(t, count)
+	assert.Zero(t, count, "未入账的中奖记录必须撤销，不能占着唯一索引挡住人工补发")
+
 	var round model.LotteryRound
 	require.NoError(t, db.First(&round).Error)
-	assert.Equal(t, model.LotteryPending, round.Status)
-	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 1).Update("quota", 10).Error)
-	require.NoError(t, model.SettleDueLotteryRounds(now.Add(time.Second)))
+	assert.Equal(t, model.LotterySettled, round.Status, "单个人失败不能拖住整轮，否则后续报名全部被闸门挡住")
+
 	var user model.User
 	require.NoError(t, db.First(&user, 1).Error)
-	assert.Equal(t, 27, user.Quota)
+	assert.Equal(t, common.MaxWalletQuota, user.Quota, "入账失败不得改动余额")
+
+	// 账务缺口必须留痕，静默吞奖励是事故温床。
+	var notices int64
+	require.NoError(t, db.Model(&model.Log{}).Where("user_id = ? AND type = ?", 1, model.LogTypeSystem).Count(&notices).Error)
+	assert.Equal(t, int64(1), notices, "跳过入账必须写一条用户可见的系统日志")
 }
 
 func lotteryRequest(t *testing.T, role int, method, path, body string, handler gin.HandlerFunc, permission *authz.Permission) *httptest.ResponseRecorder {

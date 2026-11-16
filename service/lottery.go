@@ -1,10 +1,12 @@
 package service
 
 import (
-	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/model"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 )
 
 var lotterySchedulerOnce sync.Once
@@ -18,9 +20,19 @@ func StartLotteryScheduler() {
 		}
 		go func() {
 			for {
-				if _, _, err := EnqueueSystemTask(model.SystemTaskTypeLotterySettlement, nil); err != nil {
-					common.SysError("lottery scheduler: " + err.Error())
-				}
+				// recover 必须包在单次迭代内部：写在 goroutine 最外层的话，panic 之后
+				// defer 一执行函数就返回了，循环根本活不到下一轮（退费那边就踩了这个坑）。
+				// 结算有 DB lease + 事务去重，重复入队不会重复发奖，放心重试。
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							common.SysError(fmt.Sprintf("lottery scheduler panicked: %v", r))
+						}
+					}()
+					if _, _, err := EnqueueSystemTask(model.SystemTaskTypeLotterySettlement, nil); err != nil {
+						common.SysError("lottery scheduler: " + err.Error())
+					}
+				}()
 				now := time.Now().In(model.BeijingLocation())
 				midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, model.BeijingLocation())
 				timer := time.NewTimer(time.Until(midnight))

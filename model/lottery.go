@@ -3,6 +3,7 @@ package model
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -340,6 +341,11 @@ func SettleDueLotteryRounds(now time.Time) error {
 		var settled bool
 		var credited []LotteryWinner
 		var refunded []lotteryRefund
+		// skipped 记录「中奖但入账失败」的用户（余额顶到钱包上限 / 状态变化）。
+		// 单个人失败绝不能拖垮整轮：旧实现在这里直接 return，导致该轮永远 settle 不掉，
+		// 而 JoinLottery 又有「上一轮未结算就拒绝报名」的闸门，整套抽奖会被永久焊死。
+		var skipped []lotteryRefund
+		var settledDate string
 		err := lotteryTransaction(func(tx *gorm.DB, _ *LotteryConfig) error {
 			var round LotteryRound
 			err := lockForUpdate(tx).Where("status = ? AND draw_date < ?", LotteryPending, LotteryDrawDate(now)).Order("draw_date").First(&round).Error
@@ -350,7 +356,15 @@ func SettleDueLotteryRounds(now time.Time) error {
 				return err
 			}
 			if round.RewardQuota <= 0 || round.RewardQuota > common.MaxWalletQuota || round.EntryFee < 0 || round.EntryFee > common.MaxWalletQuota || round.WinnerLimit <= 0 {
-				return ErrLotteryInvalidConfig
+				// 轮次快照已损坏：发奖和退费都不可信。强制标记结算并落日志，
+				// 否则它会永远停在 pending，把后面所有天的报名一起堵死。
+				// 宁可少发一轮，也不能让整个抽奖功能停摆。
+				common.SysError(fmt.Sprintf("lottery round invalid, forced settle: date=%s reward_quota=%d entry_fee=%d winner_limit=%d", round.DrawDate, round.RewardQuota, round.EntryFee, round.WinnerLimit))
+				if err := tx.Model(&round).Updates(map[string]any{"status": LotterySettled, "settled_at": now.Unix()}).Error; err != nil {
+					return err
+				}
+				settled = true
+				return nil
 			}
 			var ids []int
 			if err := tx.Model(&LotteryEntry{}).Where("draw_date = ?", round.DrawDate).Order("user_id").Pluck("user_id", &ids).Error; err != nil {
@@ -398,6 +412,7 @@ func SettleDueLotteryRounds(now time.Time) error {
 			}
 			eligible = eligible[:min(len(eligible), round.WinnerLimit)]
 			sort.Ints(eligible)
+			settledDate = round.DrawDate
 			for _, id := range eligible {
 				winner := LotteryWinner{DrawDate: round.DrawDate, UserID: id, UsernameSnapshot: names[id], RewardQuota: round.RewardQuota, CreditedAt: now.Unix()}
 				if err := tx.Create(&winner).Error; err != nil {
@@ -408,7 +423,14 @@ func SettleDueLotteryRounds(now time.Time) error {
 					return result.Error
 				}
 				if result.RowsAffected != 1 {
-					return ErrWalletQuotaLimitExceeded
+					// 该用户入账失败（余额顶到上限或状态已变）。删掉刚插入的中奖记录，
+					// 别让 (draw_date,user_id) 唯一索引被占住——人工补发时还得能重新插入。
+					// 本轮继续结算其他人，账务缺口由事务外的系统日志追查。
+					if err := tx.Delete(&LotteryWinner{}, winner.ID).Error; err != nil {
+						return err
+					}
+					skipped = append(skipped, lotteryRefund{UserID: id, Quota: round.RewardQuota})
+					continue
 				}
 				credited = append(credited, winner)
 			}
@@ -420,6 +442,11 @@ func SettleDueLotteryRounds(now time.Time) error {
 		})
 		if err != nil {
 			return err
+		}
+		for _, skip := range skipped {
+			// 中奖但没入账：必须留下用户可见的痕迹，静默吞奖励是账务事故的温床。
+			RecordLog(skip.UserID, LogTypeSystem, common.NewMessage("参与系统抽奖中奖，但当前余额已达钱包上限，奖励未入账，请联系管理员", map[string]any{"amount": lotteryBalanceText(skip.Quota)}))
+			common.SysError(fmt.Sprintf("lottery reward skipped: user=%d date=%s quota=%d", skip.UserID, settledDate, skip.Quota))
 		}
 		for _, refund := range refunded {
 			if err := cacheIncrUserQuota(refund.UserID, int64(refund.Quota)); err != nil {
