@@ -75,6 +75,8 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  /** 登录后是否弹窗提醒（缺省 false，兼容旧数据）。 */
+  popup: boolean
 }
 
 type AnnouncementsSectionProps = {
@@ -93,6 +95,8 @@ const announcementSchema = z.object({
     .string()
     .max(100, 'Extra must be less than 100 characters')
     .optional(),
+  // 登录后弹窗提醒；保存进公告 JSON 的 popup 字段。
+  popup: z.boolean(),
 })
 
 type AnnouncementFormValues = z.infer<typeof announcementSchema>
@@ -156,6 +160,7 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popup: false,
     },
   })
 
@@ -167,6 +172,8 @@ export function AnnouncementsSection({
           parsed.map((item, idx) => ({
             ...item,
             id: item.id || idx + 1,
+            // 旧数据没有 popup 字段，统一归一化成布尔，避免受控组件拿到 undefined。
+            popup: item.popup === true,
           }))
         )
       }
@@ -199,6 +206,7 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      popup: false,
     })
     setShowDialog(true)
   }
@@ -210,6 +218,7 @@ export function AnnouncementsSection({
       publishDate: announcement.publishDate,
       type: announcement.type,
       extra: announcement.extra || '',
+      popup: announcement.popup ?? false,
     })
     setShowDialog(true)
   }
@@ -409,6 +418,20 @@ export function AnnouncementsSection({
               ),
             },
             {
+              id: 'popup',
+              header: t('Popup'),
+              cell: (announcement) =>
+                announcement.popup ? (
+                  <StatusBadge
+                    label={t('On sign-in')}
+                    variant='info'
+                    copyable={false}
+                  />
+                ) : (
+                  <span className='text-muted-foreground'>-</span>
+                ),
+            },
+            {
               id: 'extra',
               header: t('Extra'),
               cellClassName: 'text-muted-foreground max-w-xs truncate',
@@ -575,6 +598,32 @@ export function AnnouncementsSection({
                     )}
                   </FormDescription>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='popup'
+              render={({ field }) => (
+                <FormItem className='flex flex-row items-start gap-3 rounded-md border p-3'>
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(checked) =>
+                        field.onChange(checked === true)
+                      }
+                    />
+                  </FormControl>
+                  <div className='space-y-1'>
+                    <FormLabel className='cursor-pointer'>
+                      {t('Show as popup after sign-in')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Signed-in users see this announcement in a dialog. They can choose to hide it permanently.'
+                      )}
+                    </FormDescription>
+                  </div>
                 </FormItem>
               )}
             />

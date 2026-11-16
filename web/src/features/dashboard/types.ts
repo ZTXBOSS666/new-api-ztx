@@ -263,6 +263,8 @@ export interface AnnouncementItem {
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  /** 登录后是否以弹窗形式提醒（管理端配置，旧数据缺省为 false）。 */
+  popup?: boolean
 }
 
 // ============================================================================

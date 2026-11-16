@@ -175,6 +175,10 @@ func validateAnnouncements(announcementsStr string) error {
 	validTypes := map[string]bool{
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
+	// 登录后弹窗的公告数量上限：前端每次登录会逐条弹，放任管理员勾满 100 条
+	// 等于给用户来一轮连环轰炸。限制在源头，前端只做最后一道防御。
+	const maxPopupAnnouncements = 5
+	popupCount := 0
 	for i, ann := range list {
 		content, ok := ann["content"].(string)
 		if !ok || content == "" {
@@ -198,6 +202,16 @@ func validateAnnouncements(announcementsStr string) error {
 				}
 			}
 		}
+		// popup 是可选的登录后弹窗开关；缺失或 null 等价于 false，保证旧数据照常通过校验。
+		if popup, exists := ann["popup"]; exists && popup != nil {
+			popupBool, ok := popup.(bool)
+			if !ok {
+				return common.NewMessage("Announcement #{{index}} has an invalid popup flag", map[string]any{"index": i + 1})
+			}
+			if popupBool {
+				popupCount++
+			}
+		}
 		if exceedsMaxCharacters(content, 500) {
 			return common.NewMessage("Announcement #{{index}} content cannot exceed 500 characters", map[string]any{"index": i + 1})
 		}
@@ -206,6 +220,9 @@ func validateAnnouncements(announcementsStr string) error {
 				return common.NewMessage("Announcement #{{index}} note cannot exceed 100 characters", map[string]any{"index": i + 1})
 			}
 		}
+	}
+	if popupCount > maxPopupAnnouncements {
+		return common.NewMessage("At most {{max}} announcements can be shown as popups", map[string]any{"max": maxPopupAnnouncements})
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { AnnouncementPopup } from '@/components/announcement-popup'
 import { CommandMenu } from '@/components/command-menu'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
@@ -60,6 +61,8 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
           </div>
         </SidebarProvider>
         <CommandMenu />
+        {/* 登录后的公告弹窗：只挂在这个已登录布局里，游客看不到。 */}
+        <AnnouncementPopup />
       </SearchProvider>
     </LayoutProvider>
   )
