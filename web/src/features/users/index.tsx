@@ -25,6 +25,7 @@ import { UsersMutateDrawer } from './components/users-mutate-drawer'
 import { UsersPrimaryButtons } from './components/users-primary-buttons'
 import { UsersProvider, useUsers } from './components/users-provider'
 import { UsersTable } from './components/users-table'
+import { MemberQuotaSummary } from './components/member-quota-summary'
 
 function UsersContent() {
   const { t } = useTranslation()
@@ -35,6 +36,7 @@ function UsersContent() {
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>{t('Users')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
+          <MemberQuotaSummary />
           <UsersPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>

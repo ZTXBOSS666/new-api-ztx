@@ -111,10 +111,24 @@ export interface SearchUsersParams {
   group?: string
   role?: string
   status?: string
+  /** 按余额区间筛选：active = 有余额，inactive = 余额耗尽（无效客户）。 */
+  balance?: UserBalanceFilter
   p?: number
   page_size?: number
   sort_by?: UserSortBy
   sort_order?: UserSortOrder
+}
+
+export type UserBalanceFilter = 'active' | 'inactive'
+
+/** 管理员用户列表顶部的会员余额汇总（仅普通会员）。 */
+export interface MemberQuotaSummary {
+  member_count: number
+  member_quota: number
+  /** 有余额、能正常调用的会员数。 */
+  active_count: number
+  /** 余额耗尽（<= 0）的会员数，也就是无效客户。 */
+  inactive_count: number
 }
 
 export interface UserFormData {

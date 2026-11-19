@@ -31,6 +31,7 @@ import type {
   UserFormData,
   ManageUserAction,
   ManageUserQuotaPayload,
+  MemberQuotaSummary,
   ApiResponse,
 } from './types'
 
@@ -77,6 +78,7 @@ export async function searchUsers(
     group = '',
     role = '',
     status = '',
+    balance = '',
     p = 1,
     page_size = 10,
     sort_by,
@@ -87,11 +89,22 @@ export async function searchUsers(
   queryParams.set('group', group)
   if (role) queryParams.set('role', role)
   if (status) queryParams.set('status', status)
+  if (balance) queryParams.set('balance', balance)
   queryParams.set('p', String(p))
   queryParams.set('page_size', String(page_size))
   if (sort_by) queryParams.set('sort_by', sort_by)
   if (sort_order) queryParams.set('sort_order', sort_order)
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
+  return res.data
+}
+
+/**
+ * Get member quota summary for the admin user list header
+ */
+export async function getMemberQuotaSummary(): Promise<
+  ApiResponse<MemberQuotaSummary>
+> {
+  const res = await api.get('/api/user/quota-summary')
   return res.data
 }
 

@@ -401,6 +401,34 @@ func GetMaxUserId() int {
 	return user.Id
 }
 
+// UserQuotaSummary 管理员用户列表顶部的汇总数据，只统计普通会员（role = common）。
+type UserQuotaSummary struct {
+	MemberCount int64 `json:"member_count"`
+	MemberQuota int64 `json:"member_quota"`
+	// ActiveCount 是有余额、能正常调用的会员数；InactiveCount 是余额耗尽（<= 0）的会员数。
+	// 两者相加恒等于 MemberCount。
+	ActiveCount   int64 `json:"active_count"`
+	InactiveCount int64 `json:"inactive_count"`
+}
+
+// GetMemberQuotaSummary 汇总所有未删除普通会员的余额与活跃度。
+// 禁用会员的余额仍然是平台负债，一并计入；软删除用户由 GORM 自动排除。
+// CASE WHEN 是标准 SQL，三种数据库都能跑。
+func GetMemberQuotaSummary() (*UserQuotaSummary, error) {
+	var summary UserQuotaSummary
+	err := DB.Model(&User{}).
+		Where("role = ?", common.RoleCommonUser).
+		Select(`COUNT(*) AS member_count,
+			COALESCE(SUM(quota), 0) AS member_quota,
+			COALESCE(SUM(CASE WHEN quota > 0 THEN 1 ELSE 0 END), 0) AS active_count,
+			COALESCE(SUM(CASE WHEN quota <= 0 THEN 1 ELSE 0 END), 0) AS inactive_count`).
+		Scan(&summary).Error
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
 func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (users []*User, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
@@ -436,7 +464,35 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 	return users, total, nil
 }
 
+// UserBalanceFilter 按余额区间筛选用户，用于区分「正常使用用户」和「无效客户」。
+type UserBalanceFilter string
+
+const (
+	UserBalanceAny      UserBalanceFilter = ""
+	UserBalanceActive   UserBalanceFilter = "active"   // quota > 0
+	UserBalanceInactive UserBalanceFilter = "inactive" // quota <= 0
+)
+
+// ParseUserBalanceFilter 把查询参数转成筛选条件，非法值一律当作不筛选，
+// 免得前端的脏参数把列表变成空的。
+func ParseUserBalanceFilter(value string) UserBalanceFilter {
+	switch UserBalanceFilter(value) {
+	case UserBalanceActive:
+		return UserBalanceActive
+	case UserBalanceInactive:
+		return UserBalanceInactive
+	default:
+		return UserBalanceAny
+	}
+}
+
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
+	return SearchUsersWithBalance(keyword, group, role, status, UserBalanceAny, startIdx, num, sortOptions...)
+}
+
+// SearchUsersWithBalance 在 SearchUsers 的基础上多了余额区间筛选。
+// 单独开一个函数而不是改 SearchUsers 签名，是为了不破坏已有调用点（含测试）。
+func SearchUsersWithBalance(keyword string, group string, role *int, status *int, balance UserBalanceFilter, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -480,6 +536,13 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		} else {
 			query = query.Where("deleted_at IS NULL").Where("status = ?", *status)
 		}
+	}
+	// 余额筛选：active = 还有余额能正常调用，inactive = 余额耗尽（含被扣成负数）。
+	switch balance {
+	case UserBalanceActive:
+		query = query.Where("quota > ?", 0)
+	case UserBalanceInactive:
+		query = query.Where("quota <= ?", 0)
 	}
 
 	// 获取总数

@@ -38,11 +38,12 @@ import {
 import { getGroups, getUsers, searchUsers } from '../api'
 import {
   USER_STATUS,
+  getUserBalanceOptions,
   getUserStatusOptions,
   getUserRoleOptions,
   isUserDeleted,
 } from '../constants'
-import type { User, UserSortBy } from '../types'
+import type { User, UserBalanceFilter, UserSortBy } from '../types'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { useUsersColumns } from './users-columns'
 import { useUsers } from './users-provider'
@@ -77,7 +78,7 @@ export function UsersTable() {
     pagination,
     onPaginationChange,
     ensurePageInRange,
-  } = useTableUrlState({
+} = useTableUrlState({
     search: route.useSearch(),
     navigate: route.useNavigate(),
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 10 : 20 },
@@ -86,6 +87,7 @@ export function UsersTable() {
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'role', searchKey: 'role', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'array' },
+      { columnId: 'balance', searchKey: 'balance', type: 'array' },
     ],
   })
   const statusFilter =
@@ -96,8 +98,12 @@ export function UsersTable() {
     (columnFilters.find((filter) => filter.id === 'role')?.value as
       | string[]
       | undefined) ?? []
-  const groupFilter =
+const groupFilter =
     (columnFilters.find((filter) => filter.id === 'group')?.value as
+      | string[]
+      | undefined) ?? []
+  const balanceFilter =
+    (columnFilters.find((filter) => filter.id === 'balance')?.value as
       | string[]
       | undefined) ?? []
 
@@ -136,9 +142,10 @@ export function UsersTable() {
       pagination.pageIndex + 1,
       pagination.pageSize,
       globalFilter,
-      statusFilter,
+statusFilter,
       roleFilter,
       groupFilter,
+      balanceFilter,
       sortParams,
       refreshTrigger,
     ],
@@ -147,7 +154,8 @@ export function UsersTable() {
       const hasColumnFilter =
         statusFilter.length > 0 ||
         roleFilter.length > 0 ||
-        groupFilter.length > 0
+        groupFilter.length > 0 ||
+        balanceFilter.length > 0
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
@@ -162,6 +170,7 @@ export function UsersTable() {
               status: statusFilter[0] ?? '',
               role: roleFilter[0] ?? '',
               group: groupFilter[0] ?? '',
+              balance: (balanceFilter[0] ?? '') as UserBalanceFilter | '',
             })
           : await getUsers(params)
 
@@ -242,13 +251,19 @@ export function UsersTable() {
             options: getUserRoleOptions(t),
             singleSelect: true,
           },
-          {
+{
             columnId: 'group',
             title: t('User Group'),
             options: (groupsData?.data ?? []).map((group) => ({
               label: group,
               value: group,
             })),
+            singleSelect: true,
+          },
+          {
+            columnId: 'balance',
+            title: t('Balance'),
+            options: getUserBalanceOptions(t),
             singleSelect: true,
           },
         ],

@@ -335,6 +335,16 @@ func Register(c *gin.Context) {
 	return
 }
 
+// GetMemberQuotaSummary 返回用户列表顶部的会员余额汇总（仅普通会员）。
+func GetMemberQuotaSummary(c *gin.Context) {
+	summary, err := model.GetMemberQuotaSummary()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, summary)
+}
+
 func GetAllUsers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
@@ -368,7 +378,8 @@ func SearchUsers(c *gin.Context) {
 	}
 	pageInfo := common.GetPageQuery(c)
 	sortOptions := model.NewUserSortOptions(c.Query("sort_by"), c.Query("sort_order"))
-	users, total, err := model.SearchUsers(keyword, group, role, status, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortOptions)
+	balance := model.ParseUserBalanceFilter(c.Query("balance"))
+	users, total, err := model.SearchUsersWithBalance(keyword, group, role, status, balance, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortOptions)
 	if err != nil {
 		common.ApiError(c, err)
 		return

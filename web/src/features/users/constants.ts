@@ -97,6 +97,20 @@ export const getUserRoleOptions = (t: (key: string) => string) => [
 ]
 
 // ============================================================================
+// Balance Filter (normal versus inactive members)
+// ============================================================================
+
+export const USER_BALANCE_FILTER = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+} as const
+
+export const getUserBalanceOptions = (t: (key: string) => string) => [
+  { label: t('Has balance'), value: USER_BALANCE_FILTER.ACTIVE },
+  { label: t('No balance (inactive)'), value: USER_BALANCE_FILTER.INACTIVE },
+]
+
+// ============================================================================
 // Default Values
 // ============================================================================
 
