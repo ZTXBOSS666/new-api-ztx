@@ -151,10 +151,13 @@ func GetLogRefundRunByDate(targetDate string) (*LogRefundRun, error) {
 // LogRefundDateProcessed 判断该日期是否已经有一次「完整完成」的返费运行：未被扫描上限
 // 截断、且没有失败用户。管理端据此禁止对同一天重复执行「一键返费」。
 // 若上轮被截断或存在失败用户，则返回 false，允许重跑把剩余部分补完。
+//
+// truncated IS NULL 的兼容：早期版本这一列可能没有写入值，NULL 与 false 比较恒不成立，
+// 会让那天永远算「未完成」，每次重启都重跑一遍。这里把 NULL 当作未截断处理。
 func LogRefundDateProcessed(targetDate string) (bool, error) {
 	var count int64
 	err := DB.Model(&LogRefundRun{}).
-		Where("target_date = ? AND truncated = ? AND failed_count = 0", targetDate, false).
+		Where("target_date = ? AND (truncated = ? OR truncated IS NULL) AND failed_count = 0", targetDate, false).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -363,7 +366,27 @@ func refundUserAbnormalLogs(userId int, targetDate string, candidates []logRefun
 	refundedQuota := 0
 	refundedCount := 0
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// 先查一次已登记的 log_id，作为唯一索引之外的第二道防线：
+		// 老库升级后唯一索引可能缺失（历史重复数据导致建索引失败），
+		// 只靠 OnConflict 会静默退第二遍。这里显式跳过已退过的日志。
+		existingIds := make(map[int]struct{}, len(candidates))
+		if len(candidates) > 0 {
+			ids := make([]int, 0, len(candidates))
+			for _, candidate := range candidates {
+				ids = append(ids, candidate.LogId)
+			}
+			var recorded []int
+			if err := tx.Model(&LogRefundRecord{}).Where("log_id IN ?", ids).Pluck("log_id", &recorded).Error; err != nil {
+				return err
+			}
+			for _, id := range recorded {
+				existingIds[id] = struct{}{}
+			}
+		}
 		for _, candidate := range candidates {
+			if _, done := existingIds[candidate.LogId]; done {
+				continue
+			}
 			record := LogRefundRecord{
 				LogId:      candidate.LogId,
 				UserId:     userId,

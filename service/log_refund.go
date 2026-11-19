@@ -36,6 +36,11 @@ func StartLogRefundScheduler() {
 			return
 		}
 		go func() {
+			// 第一轮是启动补账：只处理「从未尝试过」的日期。已经跑过（哪怕有用户
+			// 因为钱包上限失败）的日期不在启动时重跑，否则每次更新重启都会把最近
+			// 7 天里所有 failed_count > 0 的日期重新扫一遍——线上表现就是
+			// 「更新一次，异常退费就重复一次」。
+			startup := true
 			for {
 				// recover 必须包在单次迭代内部。写在 goroutine 最外层时，panic 之后
 				// defer 一跑函数就返回，外层 for 根本活不到下一轮——注释里担心的
@@ -46,8 +51,9 @@ func StartLogRefundScheduler() {
 							common.SysError(fmt.Sprintf("log refund scheduler panicked: %v", r))
 						}
 					}()
-					runLogRefundAutoSettlement()
+					runLogRefundAutoSettlement(startup)
 				}()
+				startup = false
 				now := time.Now().In(model.BeijingLocation())
 				next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 30, 0, model.BeijingLocation())
 				timer := time.NewTimer(time.Until(next))
@@ -59,10 +65,12 @@ func StartLogRefundScheduler() {
 
 // runLogRefundAutoSettlement 检查开关状态，把最近 logRefundBackfillDays 天里漏掉
 // 结算的日期逐天入队系统任务，由系统任务 runner 统一执行（DB lease 去重 + 失败重试）。
-// 已经完整结算过的日期通过 HasPendingLogRefundAutoRunByDate 判断跳过，重复入队不会
-// 重复退款（log_refund_records 唯一索引兜底）。active_key 去重决定了同一时刻只有
-// 一张返费任务，多天补账由 EnqueueNextLogRefundBackfill 在每张任务完成后接力串起。
-func runLogRefundAutoSettlement() {
+//
+// startup = true 表示进程启动时的补账：只处理「从未尝试过」的日期。已经跑过但存在
+// 失败的日期不在启动时重跑，否则每次发布重启都会把 failed_count > 0 的日期重新
+// 扫一遍，线上表现就是「更新一次，异常退费重复一次」。这类日期留给每天 00:00:30 的
+// 定时结算（startup = false）或管理员手动一键返费重试。
+func runLogRefundAutoSettlement(startup bool) {
 	config, err := model.GetLogRefundConfig()
 	if err != nil {
 		common.SysError("log refund scheduler: " + err.Error())
@@ -75,6 +83,17 @@ func runLogRefundAutoSettlement() {
 	for _, targetDate := range logRefundBackfillDates(config, time.Now()) {
 		if !model.HasPendingLogRefundAutoRunByDate(targetDate) {
 			continue
+		}
+		if startup {
+			attempted, err := model.LogRefundDateAttempted(targetDate)
+			if err != nil {
+				common.SysError("log refund scheduler: " + err.Error())
+				continue
+			}
+			if attempted {
+				// 启动补账不重跑已经尝试过的日期，避免每次重启重复结算。
+				continue
+			}
 		}
 		task, created, err := EnqueueSystemTask(model.SystemTaskTypeLogRefund, model.LogRefundPayload{Date: targetDate, Trigger: "auto"})
 		if err != nil {

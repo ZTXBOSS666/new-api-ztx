@@ -245,3 +245,34 @@ func TestLogRefundSkipsNonTextRequests(t *testing.T) {
 	require.NoError(t, db.First(&user, 60).Error)
 	assert.Zero(t, user.Quota)
 }
+
+// TestRefundAbnormalConsumeLogsIsIdempotent 守住资金安全：同一天重复执行
+// （模拟服务重启后自动补账）绝对不能再退一次钱。这是"每次更新就重复退费"
+// 线上问题的回归测试。
+func TestRefundAbnormalConsumeLogsIsIdempotent(t *testing.T) {
+	db := logRefundTestDB(t)
+	yesterday := time.Now().In(model.BeijingLocation()).AddDate(0, 0, -1)
+	targetDate := yesterday.Format("2006-01-02")
+	startOfDay := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, model.BeijingLocation()).Unix()
+
+	// 一条真正的异常日志：文本对话、扣费、空返回。
+	logRefundAbnormalLog(t, db, 50, 1000, startOfDay+100, 1)
+	require.NoError(t, db.Create(&model.User{Id: 50, Username: "user50", Quota: 0, Status: 1}).Error)
+
+	first, err := model.RefundAbnormalConsumeLogs(targetDate, time.Now(), "auto")
+	require.NoError(t, err)
+	assert.Equal(t, 1000, first.RefundedQuota)
+
+	// 模拟重启：同样的输入再跑一遍。
+	second, err := model.RefundAbnormalConsumeLogs(targetDate, time.Now(), "auto")
+	require.NoError(t, err)
+	assert.Zero(t, second.RefundedQuota, "重复执行不得再退一分钱")
+
+	var user model.User
+	require.NoError(t, db.First(&user, 50).Error)
+	assert.Equal(t, 1000, user.Quota, "余额只能加一次")
+
+	var recordCount int64
+	require.NoError(t, db.Model(&model.LogRefundRecord{}).Count(&recordCount).Error)
+	assert.Equal(t, int64(1), recordCount, "同一笔消费日志只能有一条退费记录")
+}
