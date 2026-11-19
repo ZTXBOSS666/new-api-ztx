@@ -57,7 +57,15 @@ export function MemberQuotaSummary() {
   const { t } = useTranslation()
   const { data, isLoading, isError } = useQuery({
     queryKey: ['member-quota-summary'],
-    queryFn: async () => requireServerSuccess(await getMemberQuotaSummary()),
+    queryFn: async () => {
+      // requireServerSuccess 只校验 success 字段，原样返回整个 ApiResponse，
+      // 真正的汇总对象在 .data 里，这层不能漏。
+      const response = requireServerSuccess(await getMemberQuotaSummary())
+      if (!response.data) {
+        throw new Error('Member quota summary payload is empty')
+      }
+      return response.data
+    },
     staleTime: 60_000,
   })
 
@@ -70,20 +78,20 @@ export function MemberQuotaSummary() {
 
   return (
     <div className='bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border px-3 py-1.5'>
-      <SummaryStat label={t('Members')} value={String(data.member_count)} />
+      <SummaryStat label={t('Members')} value={String(data.member_count ?? 0)} />
       <SummaryStat
         label={t('Total balance')}
-        value={formatQuotaWithCurrency(data.member_quota)}
+        value={formatQuotaWithCurrency(data.member_quota ?? 0)}
       />
       <SummaryStat
         label={t('Active')}
-        value={String(data.active_count)}
+        value={String(data.active_count ?? 0)}
         tone='active'
         title={t('Members with a positive balance')}
       />
       <SummaryStat
         label={t('Inactive')}
-        value={String(data.inactive_count)}
+        value={String(data.inactive_count ?? 0)}
         tone='inactive'
         title={t('Members whose balance is zero or negative')}
       />
